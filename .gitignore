@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv
+.env
+*.egg-info/
+.DS_Store
+.streamlit/
+.pytest_cache/
+*.csv~
+*.tmp
