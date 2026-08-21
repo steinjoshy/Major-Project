@@ -8,7 +8,7 @@ echo  AI Demand Forecasting System
 echo ========================================
 echo.
 
-cd /d C:\Users\stein\copilot-worktrees\major-project\steinjoshy-super-pancake
+cd /d "%~dp0"
 
 echo Verifying installation...
 venv\Scripts\python.exe test_imports.py

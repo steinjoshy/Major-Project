@@ -126,7 +126,7 @@ class DataPreprocessor:
 
         # Handle missing values in sales column — forward fill then backfill then mean
         if df[sales_col].isnull().sum() > 0:
-            df[sales_col] = df[sales_col].fillna(method='ffill').fillna(method='bfill')
+            df[sales_col] = df[sales_col].ffill().bfill()
             if df[sales_col].isnull().sum() > 0:
                 df[sales_col] = df[sales_col].fillna(df[sales_col].mean())
 
@@ -183,19 +183,55 @@ class DataPreprocessor:
         """Inverse transform scaled data back to original scale."""
         return self.scaler.inverse_transform(X_scaled)
 
+    def _create_sequences(self, data_scaled, seq_length):
+        """Create sliding-window sequences from scaled data."""
+        X, y = [], []
+        for i in range(len(data_scaled) - seq_length):
+            X.append(data_scaled[i: i + seq_length])
+            y.append(data_scaled[i + seq_length, 0])
+        return np.array(X), np.array(y)
+
     # ------------------------------------------------------------------
-    # LSTM Data Preparation
+    # LSTM Data Preparation (NO LEAKAGE - split first, then scale)
     # ------------------------------------------------------------------
 
-    def prepare_lstm_data(self, df, sales_col='Sales', seq_length=30):
+    def prepare_lstm_data(self, df, sales_col='Sales', seq_length=30, test_size=0.2):
         """
-        Prepare data for LSTM: scale demand, then create sliding-window sequences.
+        Prepare data for LSTM: split chronologically, then scale each partition,
+        then create sliding-window sequences. NO DATA LEAKAGE.
 
-        The scaler is fit on the ENTIRE series here (before split). The caller
-        must use inverse_scale() to recover original-scale predictions.
+        The scaler is fit ONLY on training data. Test data is transformed using
+        the training-fitted scaler.
 
         Returns:
-            X (n_samples, seq_length, 1), y (n_samples,)
+            X_train, X_test, y_train, y_test, scaler
+        """
+        data = df[sales_col].values.reshape(-1, 1)
+        
+        # Chronological split FIRST (before scaling)
+        split_idx = int(len(data) * (1 - test_size))
+        train_data = data[:split_idx]
+        test_data = data[split_idx:]
+        
+        # Fit scaler ONLY on training data
+        scaler = MinMaxScaler()
+        train_scaled = scaler.fit_transform(train_data)
+        test_scaled = scaler.transform(test_data)
+        
+        # Create sequences from each partition
+        X_train, y_train = self._create_sequences(train_scaled, seq_length)
+        X_test, y_test = self._create_sequences(test_scaled, seq_length)
+        
+        # Store scaler for inverse transform
+        self.scaler = scaler
+        self.train_size = split_idx
+        
+        return X_train, X_test, y_train, y_test, scaler
+
+    def prepare_lstm_data_legacy(self, df, sales_col='Sales', seq_length=30):
+        """
+        Legacy method: scale full series then create sequences (WITH LEAKAGE).
+        Kept for backward compatibility. Use prepare_lstm_data() for new code.
         """
         data = df[sales_col].values.reshape(-1, 1)
         data_scaled = self.scale_data(data, fit=True)

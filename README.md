@@ -74,8 +74,7 @@ demand-forecasting/
 │       └── optimization.py          # Inventory calculations
 ├── dashboard/
 │   └── app.py                       # Streamlit web interface
-├── notebooks/
-│   └── exploratory.ipynb           # Development notebook
+├── notebooks/                       # (Empty - reserved for future development)
 ├── requirements.txt                 # Python dependencies
 └── README.md                        # This file
 ```

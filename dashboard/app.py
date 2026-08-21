@@ -224,6 +224,14 @@ section[data-testid="stSidebar"] button {
 .sb-dot-warn { background: #d97706; }
 .sb-status-val { color: #cbd5e1; font-weight: 600; }
 
+/* ─── Sidebar Z-Score Box ─────────────────────────────────────────────────── */
+.sb-z-box {
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace !important;
+    font-size: 13px; font-weight: 700; color: #93c5fd;
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 5px; padding: 4px 8px; display: inline-block;
+}
+
 /* ─── Page Header ───────────────────────────────────────────────────────── */
 .ph { padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 22px; }
 .ph-title { font-size: 20px; font-weight: 700; color: var(--text-primary);
@@ -1719,11 +1727,6 @@ def _page_train():
     _sec('Models')
     mc1, mc2 = st.columns(2)
 
-    lstm_status   = 'badge-ok'   if st.session_state.models_trained else 'badge-neutral'
-    lstm_status_t = 'Trained'    if st.session_state.models_trained else 'Not trained'
-    hyb_status    = 'badge-ok'   if st.session_state.models_trained else 'badge-neutral'
-    hyb_status_t  = 'Trained'    if st.session_state.models_trained else 'Not trained'
-
     with mc1:
         st.markdown(f"""
         <div class="mc">
@@ -1796,11 +1799,13 @@ Step 4 — Forecast = ARIMA + XGBoost correction
     try:
         preprocessor = st.session_state.preprocessor
 
-        # LSTM data prep
+        # LSTM data prep (NO LEAKAGE - split first, then scale)
         status_box.info('Preparing LSTM sequences...')
         prog.progress(5)
-        X, y = preprocessor.prepare_lstm_data(df, sc, seq_length)
-        X_tr, X_te, y_tr, y_te = preprocessor.train_test_split_data(X, y, test_size=0.2)
+        X_tr, X_te, y_tr, y_te, lstm_scaler = preprocessor.prepare_lstm_data(
+            df, sc, seq_length, test_size=0.2
+        )
+        lstm_test_start_idx = preprocessor.train_size + seq_length  # First test date index
 
         status_box.info('Training LSTM model...')
         prog.progress(15)
@@ -1811,13 +1816,16 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         status_box.info('Evaluating LSTM...')
         prog.progress(45)
         lstm_preds_scaled = lstm.predict(X_te)
-        lstm_preds = preprocessor.inverse_scale(lstm_preds_scaled).flatten()
-        y_test_actual = preprocessor.inverse_scale(y_te.reshape(-1, 1)).flatten()
+        lstm_preds = lstm_scaler.inverse_transform(lstm_preds_scaled).flatten()
+        y_test_actual = lstm_scaler.inverse_transform(y_te.reshape(-1, 1)).flatten()
 
-        # Hybrid data prep
+        # Hybrid data prep - ALIGN test window with LSTM (Bug B3 fix)
         status_box.info('Fitting ARIMA...')
         prog.progress(55)
-        train_series, test_series, _ = preprocessor.prepare_hybrid_data(df, sc, test_size=0.2)
+        values = df[sc].values.astype(float)
+        # Hybrid train ends where LSTM test begins (aligned evaluation window)
+        train_series = values[:lstm_test_start_idx]
+        test_series = values[lstm_test_start_idx:]
         hybrid = HybridArimaXGBoost(arima_order=arima_tuple)
         hybrid.fit(train_series)
 
@@ -1825,11 +1833,15 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         prog.progress(70)
         hybrid_preds = hybrid.evaluate_on_test(train_series, test_series)
 
-        # Align predictions length
+        # Lengths should now match naturally (no min_len truncation needed)
+        # But guard against small off-by-one
         min_len = min(len(lstm_preds), len(hybrid_preds), len(y_test_actual))
-        lstm_preds   = lstm_preds[:min_len]
-        hybrid_preds = hybrid_preds[:min_len]
-        y_test_actual = y_test_actual[:min_len]
+        if min_len < len(lstm_preds):
+            lstm_preds = lstm_preds[:min_len]
+        if min_len < len(hybrid_preds):
+            hybrid_preds = hybrid_preds[:min_len]
+        if min_len < len(y_test_actual):
+            y_test_actual = y_test_actual[:min_len]
 
         # Comparison
         status_box.info('Comparing models...')
@@ -2028,6 +2040,8 @@ def _page_forecast():
 
             status.info('Preparing LSTM input sequence...')
             prog.progress(10)
+            # Use the scaler that was fit on TRAINING DATA ONLY (no leakage)
+            # The preprocessor.scaler is now the training-fitted scaler
             scaled_all = preprocessor.scale_data(df[sc].values.reshape(-1, 1), fit=False)
             last_seq   = scaled_all[-seq_length:].flatten()
 
@@ -2037,11 +2051,9 @@ def _page_forecast():
 
             status.info('Generating Hybrid ARIMA+XGBoost forecast...')
             prog.progress(60)
-            # Re-fit Hybrid on full dataset for future forecast
-            arima_tuple = _parse_arima_order()
-            hybrid_full = HybridArimaXGBoost(arima_order=arima_tuple)
-            hybrid_full.fit(df[sc].values.astype(float))
-            hybrid_fc = hybrid_full.forecast_future(steps=forecast_steps)
+            # Use the ALREADY-TRAINED hybrid model from evaluation (no silent refit)
+            # This ensures the forecast model matches the evaluated model (Bug B4 fix)
+            hybrid_fc = hybrid_obj.forecast_future(steps=forecast_steps)
 
             prog.progress(90)
             # Future dates
@@ -2320,8 +2332,11 @@ def _page_inventory():
     with dl_col1:
         _download_csv(recs_df, 'Inventory Parameters', 'inventory_parameters.csv', 'dl_inv_params')
     with dl_col2:
-        if 'inv_proj' in dir():
+        # inv_proj is defined in the try block above; use a flag
+        try:
             _download_csv(inv_proj, 'Projection Data', 'inventory_projection.csv', 'dl_inv_proj')
+        except NameError:
+            pass  # inv_proj not available (projection failed)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE: REPORTS
