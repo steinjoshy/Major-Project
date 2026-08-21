@@ -1,163 +1,172 @@
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping
 import warnings
+
 warnings.filterwarnings('ignore')
 
 
 class LSTMForecaster:
     """
-    LSTM-based time-series forecasting model.
-    
-    Uses Random Forest (sklearn) instead of TensorFlow for better compatibility
-    and to avoid TensorFlow installation issues while maintaining full API compatibility.
+    LSTM-based time-series forecasting model using TensorFlow/Keras.
+
+    Architecture:
+        LSTM(64) → Dropout(0.2) → LSTM(32) → Dropout(0.2) → Dense(16) → Dense(1)
+
+    Data must be MinMax-scaled before passing to train()/predict().
+    Use the same scaler from DataPreprocessor to inverse-transform predictions.
     """
-    
+
     def __init__(self, seq_length=30, lstm_units=64, epochs=50, batch_size=32):
         """
-        Initialize LSTM forecaster.
-        
         Args:
-            seq_length: Length of input sequences
-            lstm_units: Number of LSTM units (compatibility only)
-            epochs: Number of training epochs (compatibility only)
-            batch_size: Batch size for training (compatibility only)
+            seq_length:  Length of each input sequence (look-back window)
+            lstm_units:  Number of units in the first LSTM layer
+            epochs:      Maximum training epochs (EarlyStopping may stop sooner)
+            batch_size:  Mini-batch size during training
         """
         self.seq_length = seq_length
         self.lstm_units = lstm_units
         self.epochs = epochs
         self.batch_size = batch_size
-        
-        # Using Random Forest instead of LSTM neural network
-        # This provides similar functionality without TensorFlow dependency
-        self.model = RandomForestRegressor(
-            n_estimators=100,
-            max_depth=20,
-            random_state=42,
-            n_jobs=-1
-        )
+        self.model = None
         self.history = None
-        self.scaler = StandardScaler()
-    
+
+    # ------------------------------------------------------------------
+    # Model Architecture
+    # ------------------------------------------------------------------
+
+    def build_model(self, input_shape):
+        """Build and compile the LSTM neural network."""
+        model = Sequential([
+            LSTM(self.lstm_units, activation='tanh', input_shape=input_shape,
+                 return_sequences=True),
+            Dropout(0.2),
+            LSTM(self.lstm_units // 2, activation='tanh'),
+            Dropout(0.2),
+            Dense(16, activation='relu'),
+            Dense(1)
+        ])
+        model.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
+        self.model = model
+        return model
+
+    # ------------------------------------------------------------------
+    # Training
+    # ------------------------------------------------------------------
+
     def train(self, X_train, y_train, X_val=None, y_val=None, verbose=0):
         """
-        Train forecasting model.
-        
+        Train the LSTM model.
+
         Args:
-            X_train: Training sequences (samples, seq_length, features) or (samples, features)
-            y_train: Training targets
-            X_val: Validation sequences (optional)
-            y_val: Validation targets (optional)
-            verbose: Verbosity level
-        
+            X_train: (n_samples, seq_length, 1) scaled training sequences
+            y_train: (n_samples,) scaled training targets
+            X_val, y_val: Optional validation data
+            verbose: Keras verbosity (0=silent)
+
         Returns:
-            Training history
+            Keras History object
         """
-        # Reshape if needed
-        if len(X_train.shape) == 3:
-            X_train_flat = X_train.reshape(X_train.shape[0], -1)
-        else:
-            X_train_flat = X_train
-        
-        # Train model
-        self.model.fit(X_train_flat, y_train)
-        
-        # Create dummy history for compatibility
-        self.history = {
-            'loss': [float(i) for i in np.linspace(1.0, 0.1, self.epochs)],
-            'val_loss': [float(i) for i in np.linspace(1.1, 0.15, self.epochs)]
-        }
-        
-        if verbose:
-            print(f"✅ Model trained. Training samples: {X_train_flat.shape[0]}")
-        
+        if self.model is None:
+            self.build_model((X_train.shape[1], X_train.shape[2]))
+
+        callbacks = [
+            EarlyStopping(monitor='val_loss' if X_val is not None else 'loss',
+                          patience=8, restore_best_weights=True)
+        ]
+
+        fit_kwargs = dict(
+            epochs=self.epochs,
+            batch_size=self.batch_size,
+            callbacks=callbacks,
+            verbose=verbose
+        )
+        if X_val is not None and y_val is not None:
+            fit_kwargs['validation_data'] = (X_val, y_val)
+
+        self.history = self.model.fit(X_train, y_train, **fit_kwargs)
         return self.history
-    
+
+    # ------------------------------------------------------------------
+    # Prediction
+    # ------------------------------------------------------------------
+
     def predict(self, X_test):
-        """Generate predictions on test data."""
+        """Generate predictions on scaled test sequences. Returns scaled output."""
         if self.model is None:
             raise ValueError("Model not trained. Call train() first.")
-        
-        # Reshape if needed
-        if len(X_test.shape) == 3:
-            X_test_flat = X_test.reshape(X_test.shape[0], -1)
-        else:
-            X_test_flat = X_test
-        
-        predictions = self.model.predict(X_test_flat)
-        return predictions.reshape(-1, 1)
-    
-    def forecast_future(self, data, steps=30, scaler=None):
+        return self.model.predict(X_test, verbose=0)
+
+    # ------------------------------------------------------------------
+    # Future Forecast
+    # ------------------------------------------------------------------
+
+    def forecast_future(self, last_scaled_sequence, steps=30, scaler=None):
         """
-        Forecast future values beyond the training data.
-        
+        Auto-regressively forecast `steps` future values.
+
         Args:
-            data: Last sequence of data (scaled)
-            steps: Number of steps to forecast
-            scaler: MinMaxScaler for inverse transformation
-        
+            last_scaled_sequence: 1-D array of length seq_length, already MinMax-scaled.
+                                  Pass `scaler.transform(last_raw_values.reshape(-1,1)).flatten()`
+                                  from the caller — do NOT pass raw (unscaled) values.
+            steps:  Number of future periods to forecast.
+            scaler: MinMaxScaler used during preprocessing. If provided, predictions
+                    are inverse-transformed back to original scale.
+
         Returns:
-            Future predictions (original scale if scaler provided)
+            np.array of length `steps` (original scale if scaler provided, else scaled)
         """
         if self.model is None:
             raise ValueError("Model not trained. Call train() first.")
-        
-        future_predictions = []
-        
-        # Flatten data if needed
-        if len(data.shape) > 1:
-            current_sequence = data.flatten().copy()
-        else:
-            current_sequence = data.copy()
-        
+
+        if len(last_scaled_sequence) != self.seq_length:
+            raise ValueError(
+                f"last_scaled_sequence must have length {self.seq_length}, "
+                f"got {len(last_scaled_sequence)}."
+            )
+
+        future_scaled = []
+        current_seq = last_scaled_sequence.copy()
+
         for _ in range(steps):
-            # Prepare input (keep last seq_length values)
-            if len(current_sequence) >= self.seq_length:
-                X_pred = current_sequence[-self.seq_length:].reshape(1, -1)
-            else:
-                X_pred = current_sequence.reshape(1, -1)
-            
-            # Predict next value
-            next_value = self.model.predict(X_pred)[0]
-            future_predictions.append(next_value)
-            
-            # Update sequence
-            current_sequence = np.append(current_sequence, next_value)
-        
-        future_predictions = np.array(future_predictions)
-        
-        # Inverse scale if scaler provided
+            next_val = self.model.predict(
+                current_seq.reshape(1, self.seq_length, 1), verbose=0
+            )[0, 0]
+            future_scaled.append(next_val)
+            current_seq = np.append(current_seq[1:], next_val)
+
+        future_scaled = np.array(future_scaled)
+
         if scaler is not None:
-            try:
-                future_predictions = scaler.inverse_transform(
-                    future_predictions.reshape(-1, 1)
-                ).flatten()
-            except:
-                pass
-        
-        return future_predictions
-    
-    def get_training_loss(self):
-        """Get training history."""
+            return scaler.inverse_transform(
+                future_scaled.reshape(-1, 1)
+            ).flatten()
+
+        return future_scaled
+
+    # ------------------------------------------------------------------
+    # Diagnostics
+    # ------------------------------------------------------------------
+
+    def get_training_history(self):
+        """Return dict with 'loss' (and optionally 'val_loss') lists."""
         if self.history is None:
-            return None
-        return self.history
-    
+            return {}
+        return self.history.history
+
     def save_model(self, filepath):
-        """Save trained model to file."""
+        """Save the trained Keras model to a file."""
         if self.model is not None:
-            import pickle
-            with open(filepath, 'wb') as f:
-                pickle.dump(self.model, f)
-            print(f"✅ Model saved to {filepath}")
-    
+            self.model.save(filepath)
+
     def load_model(self, filepath):
-        """Load trained model from file."""
-        import pickle
-        with open(filepath, 'rb') as f:
-            self.model = pickle.load(f)
-        print(f"✅ Model loaded from {filepath}")
+        """Load a previously saved Keras model."""
+        from tensorflow.keras.models import load_model
+        self.model = load_model(filepath)
 
 
 if __name__ == "__main__":

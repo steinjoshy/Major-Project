@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import plotly.graph_objects as go
 import plotly.express as px
 from scipy import stats
@@ -9,164 +7,235 @@ from scipy import stats
 
 class ExploratoryAnalysis:
     """Performs exploratory data analysis on time-series sales data."""
-    
+
     def __init__(self):
-        sns.set_style("whitegrid")
         self.stats_summary = {}
-    
+
+    # ------------------------------------------------------------------
+    # Summary Statistics
+    # ------------------------------------------------------------------
+
     def generate_summary_statistics(self, df, sales_col='Sales'):
-        """Generate statistical summary of sales data."""
-        stats_dict = {
-            'Count': df[sales_col].count(),
-            'Mean': df[sales_col].mean(),
-            'Std Dev': df[sales_col].std(),
-            'Min': df[sales_col].min(),
-            '25%': df[sales_col].quantile(0.25),
-            'Median': df[sales_col].median(),
-            '75%': df[sales_col].quantile(0.75),
-            'Max': df[sales_col].max(),
-            'Skewness': df[sales_col].skew(),
-            'Kurtosis': df[sales_col].kurtosis()
+        """
+        Generate statistical summary of sales data.
+
+        Returns:
+            Plain dict (compatible with both dict-style and attribute access)
+        """
+        s = df[sales_col].dropna()
+        result = {
+            'Count': int(s.count()),
+            'Mean': float(s.mean()),
+            'Std Dev': float(s.std()),
+            'Min': float(s.min()),
+            'Q1 (25%)': float(s.quantile(0.25)),
+            'Median': float(s.median()),
+            'Q3 (75%)': float(s.quantile(0.75)),
+            'Max': float(s.max()),
+            'Skewness': float(s.skew()),
+            'Kurtosis': float(s.kurtosis()),
         }
-        self.stats_summary = stats_dict
-        return pd.Series(stats_dict)
-    
+        self.stats_summary = result
+        return result
+
+    # ------------------------------------------------------------------
+    # Outlier Detection
+    # ------------------------------------------------------------------
+
     def detect_outliers(self, df, sales_col='Sales', method='iqr', threshold=1.5):
         """
-        Detect outliers using IQR method.
-        
-        Args:
-            df: Input dataframe
-            sales_col: Sales column name
-            method: 'iqr' or 'zscore'
-            threshold: Multiplier for IQR (default 1.5) or z-score limit (default 1.5)
-        
+        Detect outliers using IQR or Z-score method.
+
         Returns:
-            Dataframe with outlier flag
+            DataFrame with added 'Outlier' boolean column
         """
         df = df.copy()
-        
+
         if method == 'iqr':
             Q1 = df[sales_col].quantile(0.25)
             Q3 = df[sales_col].quantile(0.75)
             IQR = Q3 - Q1
-            lower_bound = Q1 - threshold * IQR
-            upper_bound = Q3 + threshold * IQR
-            df['Outlier'] = (df[sales_col] < lower_bound) | (df[sales_col] > upper_bound)
-        
+            lower = Q1 - threshold * IQR
+            upper = Q3 + threshold * IQR
+            df['Outlier'] = (df[sales_col] < lower) | (df[sales_col] > upper)
         elif method == 'zscore':
-            df['Z_Score'] = np.abs(stats.zscore(df[sales_col]))
-            df['Outlier'] = df['Z_Score'] > threshold
-            df = df.drop('Z_Score', axis=1)
-        
+            z = np.abs(stats.zscore(df[sales_col].fillna(0)))
+            df['Outlier'] = z > threshold
+        else:
+            df['Outlier'] = False
+
         return df
-    
-    def plot_time_series(self, df, date_col='Date', sales_col='Sales', title='Sales Over Time'):
-        """Plot time series with Plotly."""
-        fig = px.line(df, x=date_col, y=sales_col, title=title,
-                     labels={sales_col: 'Sales', date_col: 'Date'})
-        fig.update_layout(hovermode='x unified', template='plotly_white')
+
+    # ------------------------------------------------------------------
+    # Core Plots
+    # ------------------------------------------------------------------
+
+    def plot_time_series(self, df, date_col='Date', sales_col='Sales',
+                         title='Demand Over Time'):
+        """Plot demand trend as a line chart."""
+        fig = px.line(
+            df, x=date_col, y=sales_col,
+            title=title,
+            labels={sales_col: 'Demand', date_col: 'Date'}
+        )
+        fig.update_traces(line_color='#1f77b4', line_width=1.5)
+        fig.update_layout(hovermode='x unified', template='plotly_white',
+                          margin=dict(l=10, r=10, t=40, b=10))
         return fig
-    
-    def plot_seasonal_pattern(self, df, date_col='Date', sales_col='Sales', period='Month'):
-        """Plot seasonal patterns (daily, weekly, monthly)."""
+
+    def plot_distribution(self, df, sales_col='Sales', title='Demand Distribution'):
+        """Histogram + KDE of demand values."""
+        fig = px.histogram(
+            df, x=sales_col, nbins=40, title=title,
+            labels={sales_col: 'Demand'},
+            color_discrete_sequence=['#1f77b4']
+        )
+        mean_val = df[sales_col].mean()
+        fig.add_vline(x=mean_val, line_dash='dash', line_color='red',
+                      annotation_text=f'Mean: {mean_val:.1f}',
+                      annotation_position='top right')
+        fig.update_layout(template='plotly_white',
+                          margin=dict(l=10, r=10, t=40, b=10))
+        return fig
+
+    def plot_seasonal_pattern(self, df, date_col='Date', sales_col='Sales',
+                              period='Month'):
+        """
+        Bar chart of average demand by period.
+        period: 'Month', 'Day' (day-of-week), or 'Week'
+        """
         df_temp = df.copy()
-        df_temp[period] = df_temp[date_col].dt.month if period == 'Month' else \
-                          df_temp[date_col].dt.dayofweek if period == 'Day' else \
-                          df_temp[date_col].dt.isocalendar().week
-        
-        avg_by_period = df_temp.groupby(period)[sales_col].mean()
-        
-        fig = px.bar(x=avg_by_period.index, y=avg_by_period.values,
-                    title=f'Average Sales by {period}',
-                    labels={'x': period, 'y': 'Average Sales'})
-        fig.update_layout(template='plotly_white')
+        if period == 'Month':
+            df_temp['_period'] = df_temp[date_col].dt.month
+            x_labels = {i: m for i, m in enumerate(
+                ['Jan','Feb','Mar','Apr','May','Jun',
+                 'Jul','Aug','Sep','Oct','Nov','Dec'], 1)}
+            x_title = 'Month'
+        elif period == 'Day':
+            df_temp['_period'] = df_temp[date_col].dt.dayofweek
+            x_labels = {0:'Mon',1:'Tue',2:'Wed',3:'Thu',4:'Fri',5:'Sat',6:'Sun'}
+            x_title = 'Day of Week'
+        else:
+            df_temp['_period'] = df_temp[date_col].dt.isocalendar().week.astype(int)
+            x_labels = {}
+            x_title = 'Week'
+
+        avg = df_temp.groupby('_period')[sales_col].mean().reset_index()
+        avg.columns = [x_title, 'Average Demand']
+
+        if x_labels:
+            avg[x_title] = avg[x_title].map(x_labels).fillna(avg[x_title].astype(str))
+
+        fig = px.bar(
+            avg, x=x_title, y='Average Demand',
+            title=f'Average Demand by {x_title}',
+            color_discrete_sequence=['#1f77b4']
+        )
+        fig.update_layout(template='plotly_white',
+                          margin=dict(l=10, r=10, t=40, b=10))
         return fig
-    
-    def plot_distribution(self, df, sales_col='Sales', title='Sales Distribution'):
-        """Plot distribution of sales values."""
-        fig = px.histogram(df, x=sales_col, nbins=50, title=title,
-                          labels={sales_col: 'Sales'})
-        fig.add_vline(x=df[sales_col].mean(), line_dash="dash", 
-                     annotation_text="Mean", annotation_position="top right")
-        fig.update_layout(template='plotly_white')
+
+    def plot_monthly_boxplot(self, df, date_col='Date', sales_col='Sales'):
+        """Box plot of demand spread by month."""
+        df_temp = df.copy()
+        month_names = ['Jan','Feb','Mar','Apr','May','Jun',
+                       'Jul','Aug','Sep','Oct','Nov','Dec']
+        df_temp['Month'] = df_temp[date_col].dt.month.map(
+            {i: m for i, m in enumerate(month_names, 1)}
+        )
+        fig = px.box(
+            df_temp, x='Month', y=sales_col,
+            title='Monthly Demand Distribution',
+            labels={sales_col: 'Demand'},
+            category_orders={'Month': month_names},
+            color_discrete_sequence=['#1f77b4']
+        )
+        fig.update_layout(template='plotly_white',
+                          margin=dict(l=10, r=10, t=40, b=10))
         return fig
-    
+
     def plot_correlation_heatmap(self, df, numeric_cols=None):
-        """Plot correlation heatmap of numerical columns."""
+        """Correlation heatmap of numerical columns."""
         if numeric_cols is None:
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-        
-        corr_matrix = df[numeric_cols].corr()
-        
+            numeric_cols = list(df.select_dtypes(include=[np.number]).columns)
+        if len(numeric_cols) < 2:
+            return None
+
+        corr = df[numeric_cols].corr()
         fig = go.Figure(data=go.Heatmap(
-            z=corr_matrix.values,
-            x=corr_matrix.columns,
-            y=corr_matrix.columns,
+            z=corr.values,
+            x=corr.columns.tolist(),
+            y=corr.columns.tolist(),
             colorscale='RdBu',
-            zmid=0
+            zmid=0,
+            text=np.round(corr.values, 2),
+            texttemplate='%{text}',
+            textfont=dict(size=9)
         ))
-        fig.update_layout(title='Correlation Heatmap', template='plotly_white')
+        fig.update_layout(
+            title='Feature Correlation Heatmap',
+            template='plotly_white',
+            margin=dict(l=10, r=10, t=40, b=10)
+        )
         return fig
-    
+
+    def analyze_trend(self, df, date_col='Date', sales_col='Sales', window=30):
+        """Overlay actual demand with short and long moving averages."""
+        df = df.copy()
+        long_w = max(window * 3, window + 1)
+        df['MA_Short'] = df[sales_col].rolling(window=window, min_periods=1).mean()
+        df['MA_Long'] = df[sales_col].rolling(window=long_w, min_periods=1).mean()
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df[date_col], y=df[sales_col],
+            mode='lines', name='Actual',
+            line=dict(color='#aec7e8', width=1)
+        ))
+        fig.add_trace(go.Scatter(
+            x=df[date_col], y=df['MA_Short'],
+            mode='lines', name=f'{window}-day MA',
+            line=dict(color='#1f77b4', dash='dash', width=2)
+        ))
+        fig.add_trace(go.Scatter(
+            x=df[date_col], y=df['MA_Long'],
+            mode='lines', name=f'{long_w}-day MA',
+            line=dict(color='#d62728', dash='dot', width=2)
+        ))
+        fig.update_layout(
+            title='Trend Analysis — Moving Averages',
+            xaxis_title='Date', yaxis_title='Demand',
+            hovermode='x unified', template='plotly_white',
+            margin=dict(l=10, r=10, t=40, b=10)
+        )
+        return fig
+
     def plot_acf_pacf(self, df, sales_col='Sales', lags=40):
-        """Plot ACF and PACF for stationarity analysis."""
+        """Return matplotlib figure with ACF and PACF plots."""
+        import matplotlib.pyplot as plt
         from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
-        
-        fig, axes = plt.subplots(2, 1, figsize=(12, 6))
-        
-        plot_acf(df[sales_col], lags=lags, ax=axes[0])
+
+        fig, axes = plt.subplots(2, 1, figsize=(10, 5))
+        plot_acf(df[sales_col].dropna(), lags=min(lags, len(df) // 2 - 1),
+                 ax=axes[0], color='#1f77b4')
         axes[0].set_title('Autocorrelation Function (ACF)')
-        
-        plot_pacf(df[sales_col], lags=lags, ax=axes[1])
+        plot_pacf(df[sales_col].dropna(), lags=min(lags, len(df) // 2 - 1),
+                  ax=axes[1], color='#1f77b4')
         axes[1].set_title('Partial Autocorrelation Function (PACF)')
-        
         plt.tight_layout()
         return fig
-    
-    def analyze_trend(self, df, date_col='Date', sales_col='Sales', window=30):
-        """Analyze trend using moving average."""
-        df = df.copy()
-        df['MA_Short'] = df[sales_col].rolling(window=window).mean()
-        df['MA_Long'] = df[sales_col].rolling(window=window*3).mean()
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df[date_col], y=df[sales_col],
-                                mode='lines', name='Actual Sales',
-                                line=dict(color='blue', width=1)))
-        fig.add_trace(go.Scatter(x=df[date_col], y=df['MA_Short'],
-                                mode='lines', name=f'{window}-day MA',
-                                line=dict(color='orange', dash='dash')))
-        fig.add_trace(go.Scatter(x=df[date_col], y=df['MA_Long'],
-                                mode='lines', name=f'{window*3}-day MA',
-                                line=dict(color='red', dash='dash')))
-        
-        fig.update_layout(title='Trend Analysis with Moving Averages',
-                         hovermode='x unified', template='plotly_white')
-        return fig
-    
-    def compare_products(self, df, date_col='Date', sales_col='Sales', product_col='Product'):
-        """Compare sales across different products."""
-        if product_col not in df.columns:
-            return None
-        
-        fig = px.line(df, x=date_col, y=sales_col, color=product_col,
-                     title='Sales Comparison by Product',
-                     labels={sales_col: 'Sales', date_col: 'Date'})
-        fig.update_layout(hovermode='x unified', template='plotly_white')
-        return fig
-    
+
     def generate_eda_report(self, df, date_col='Date', sales_col='Sales'):
-        """Generate comprehensive EDA report."""
-        report = {
+        """Generate dict of all EDA outputs for programmatic use."""
+        return {
             'summary_stats': self.generate_summary_statistics(df, sales_col),
             'outliers': self.detect_outliers(df, sales_col),
             'ts_plot': self.plot_time_series(df, date_col, sales_col),
             'distribution': self.plot_distribution(df, sales_col),
             'monthly_seasonal': self.plot_seasonal_pattern(df, date_col, sales_col, 'Month'),
-            'trend_analysis': self.analyze_trend(df, date_col, sales_col)
+            'dayofweek_seasonal': self.plot_seasonal_pattern(df, date_col, sales_col, 'Day'),
+            'trend_analysis': self.analyze_trend(df, date_col, sales_col),
         }
-        return report
 
 
 if __name__ == "__main__":

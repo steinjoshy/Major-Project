@@ -9,7 +9,6 @@ env/
 .env
 *.egg-info/
 .DS_Store
-.streamlit/
 .pytest_cache/
 *.csv~
 *.tmp
