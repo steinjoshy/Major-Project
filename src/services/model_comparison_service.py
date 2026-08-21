@@ -4,11 +4,12 @@ Model Comparison Service for AI Demand Forecasting.
 Handles model evaluation, comparison, and best model selection.
 Pure Python service with no Streamlit dependencies.
 """
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Union
-from dataclasses import dataclass, field
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
 @dataclass
@@ -19,8 +20,8 @@ class ModelMetrics:
     rmse: float
     mape: float
     n_samples: int
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'Model': self.model_name,
             'MAE': round(self.mae, 4),
@@ -38,8 +39,8 @@ class ComparisonResult:
     best_metrics: ModelMetrics
     improvement_pct: float
     metric_used: str = 'RMSE'
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         return {
             'comparison_table': self.metrics_table.to_dict('records'),
             'best_model': self.best_model,
@@ -56,32 +57,32 @@ class ModelComparisonService:
     Provides RMSE, MAE, MAPE metrics and model comparison.
     No Streamlit dependencies.
     """
-    
+
     def __init__(self):
         """Initialize the comparison service."""
-        self._results: Dict[str, ModelMetrics] = {}
-        self._last_comparison: Optional[ComparisonResult] = None
-    
+        self._results: dict[str, ModelMetrics] = {}
+        self._last_comparison: ComparisonResult | None = None
+
     # ------------------------------------------------------------------
     # Metric Calculations
     # ------------------------------------------------------------------
-    
+
     @staticmethod
-    def rmse(y_true: Union[np.ndarray, List[float]], y_pred: Union[np.ndarray, List[float]]) -> float:
+    def rmse(y_true: np.ndarray | list[float], y_pred: np.ndarray | list[float]) -> float:
         """Root Mean Squared Error."""
         y_true = np.asarray(y_true, dtype=float)
         y_pred = np.asarray(y_pred, dtype=float)
         return float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    
+
     @staticmethod
-    def mae(y_true: Union[np.ndarray, List[float]], y_pred: Union[np.ndarray, List[float]]) -> float:
+    def mae(y_true: np.ndarray | list[float], y_pred: np.ndarray | list[float]) -> float:
         """Mean Absolute Error."""
         y_true = np.asarray(y_true, dtype=float)
         y_pred = np.asarray(y_pred, dtype=float)
         return float(mean_absolute_error(y_true, y_pred))
-    
+
     @staticmethod
-    def mape(y_true: Union[np.ndarray, List[float]], y_pred: Union[np.ndarray, List[float]]) -> float:
+    def mape(y_true: np.ndarray | list[float], y_pred: np.ndarray | list[float]) -> float:
         """
         Mean Absolute Percentage Error (%).
         Avoids division by zero using epsilon.
@@ -90,11 +91,11 @@ class ModelComparisonService:
         y_pred = np.asarray(y_pred, dtype=float)
         eps = 1e-8
         return float(np.mean(np.abs((y_true - y_pred) / (np.abs(y_true) + eps))) * 100)
-    
+
     def evaluate_model(
         self,
-        y_true: Union[np.ndarray, List[float]],
-        y_pred: Union[np.ndarray, List[float]],
+        y_true: np.ndarray | list[float],
+        y_pred: np.ndarray | list[float],
         model_name: str = "Model",
     ) -> ModelMetrics:
         """
@@ -110,10 +111,10 @@ class ModelComparisonService:
         """
         y_true = np.asarray(y_true, dtype=float)
         y_pred = np.asarray(y_pred, dtype=float)
-        
+
         if len(y_true) != len(y_pred):
             raise ValueError(f"Length mismatch: y_true={len(y_true)}, y_pred={len(y_pred)}")
-        
+
         metrics = ModelMetrics(
             model_name=model_name,
             mae=self.mae(y_true, y_pred),
@@ -121,14 +122,14 @@ class ModelComparisonService:
             mape=self.mape(y_true, y_pred),
             n_samples=len(y_true),
         )
-        
+
         self._results[model_name] = metrics
         return metrics
-    
+
     def compare_models(
         self,
-        y_true: Union[np.ndarray, List[float]],
-        predictions_dict: Dict[str, Union[np.ndarray, List[float]]],
+        y_true: np.ndarray | list[float],
+        predictions_dict: dict[str, np.ndarray | list[float]],
         metric: str = 'RMSE',
     ) -> ComparisonResult:
         """
@@ -143,7 +144,7 @@ class ModelComparisonService:
             ComparisonResult with sorted DataFrame and best model info
         """
         y_true = np.asarray(y_true, dtype=float)
-        
+
         rows = []
         for name, y_pred in predictions_dict.items():
             y_pred = np.asarray(y_pred, dtype=float)
@@ -154,29 +155,29 @@ class ModelComparisonService:
                 )
             metrics = self.evaluate_model(y_true, y_pred, name)
             rows.append(metrics)
-        
+
         if not rows:
             raise ValueError("No models to compare")
-        
+
         # Build DataFrame
         df = pd.DataFrame([m.to_dict() for m in rows])
-        
+
         # Sort by metric
         valid_metrics = {'RMSE', 'MAE', 'MAPE (%)'}
         sort_metric = metric if metric in valid_metrics else 'RMSE'
         df = df.sort_values(sort_metric).reset_index(drop=True)
-        
+
         # Best model
         best_idx = df[sort_metric].idxmin()
         best_row = df.loc[best_idx]
         best_model = best_row['Model']
         best_metrics = self._results[best_model]
-        
+
         # Improvement over worst
         worst_val = df[sort_metric].max()
         best_val = df[sort_metric].min()
         improvement = ((worst_val - best_val) / worst_val * 100) if worst_val > 0 else 0.0
-        
+
         result = ComparisonResult(
             metrics_table=df,
             best_model=best_model,
@@ -184,14 +185,14 @@ class ModelComparisonService:
             improvement_pct=round(improvement, 1),
             metric_used=sort_metric,
         )
-        
+
         self._last_comparison = result
         return result
-    
+
     def get_best_model(
         self,
         metric: str = 'RMSE',
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get best model info from last comparison.
         
@@ -203,19 +204,19 @@ class ModelComparisonService:
         """
         if self._last_comparison is None:
             raise ValueError("No comparison performed yet. Call compare_models() first.")
-        
+
         return {
             'best_model': self._last_comparison.best_model,
             'metrics': self._last_comparison.best_metrics.to_dict(),
             'improvement_pct': self._last_comparison.improvement_pct,
         }
-    
+
     def generate_summary(
         self,
-        y_true: Union[np.ndarray, List[float]],
-        predictions_dict: Dict[str, Union[np.ndarray, List[float]]],
+        y_true: np.ndarray | list[float],
+        predictions_dict: dict[str, np.ndarray | list[float]],
         metric: str = 'RMSE',
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Full pipeline: compare + select best model.
         
@@ -232,11 +233,11 @@ class ModelComparisonService:
             'comparison_table': comparison.metrics_table,
             'best_model_info': self.get_best_model(metric),
         }
-    
+
     def export_results(
         self,
         filepath: str,
-        results_df: Optional[pd.DataFrame] = None,
+        results_df: pd.DataFrame | None = None,
     ) -> None:
         """
         Export comparison results to CSV.
@@ -250,15 +251,15 @@ class ModelComparisonService:
                 raise ValueError("No results to export")
             results_df = self._last_comparison.metrics_table
         results_df.to_csv(filepath, index=False)
-    
-    def get_results(self) -> Dict[str, ModelMetrics]:
+
+    def get_results(self) -> dict[str, ModelMetrics]:
         """Get all evaluated model results."""
         return self._results.copy()
-    
-    def get_last_comparison(self) -> Optional[ComparisonResult]:
+
+    def get_last_comparison(self) -> ComparisonResult | None:
         """Get last comparison result."""
         return self._last_comparison
-    
+
     def clear_results(self) -> None:
         """Clear stored results."""
         self._results.clear()

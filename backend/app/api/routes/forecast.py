@@ -1,30 +1,31 @@
 """
 Forecasting endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+
+from backend.app.schemas.common import (
+    JobCreateResponse,
+    JobStatus,
+    JobStatusResponse,
+    SuccessResponse,
+)
 from backend.app.schemas.forecast import (
-    ModelTrainingRequest,
-    ModelTrainingResponse,
-    TrainingResultResponse,
     FutureForecastRequest,
     FutureForecastResponse,
-    ModelListResponse,
     ModelInfo,
+    ModelListResponse,
     ModelTrainingJobRequest,
-    ModelTrainingJobResponse,
+    ModelTrainingRequest,
+    ModelTrainingResponse,
 )
-from backend.app.schemas.common import SuccessResponse, ErrorResponse, JobCreateResponse, JobStatusResponse, JobStatus
-from backend.app.dependencies import get_forecasting_service
-from src.services.forecasting_service import ForecastingService, TrainingResult
-from backend.app.core.config import get_settings
 
 router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 # In-memory job storage (replace with Redis in production)
-_job_store: Dict[str, Dict[str, Any]] = {}
+_job_store: dict[str, dict[str, Any]] = {}
 _job_counter = 0
 
 
@@ -44,7 +45,7 @@ async def list_models():
     List all available forecasting models and their status.
     """
     settings = __import__("backend.app.core.config", fromlist=["get_settings"]).get_settings()
-    
+
     # For now, return static info about available models
     models = [
         ModelInfo(
@@ -73,7 +74,7 @@ async def list_models():
             file_path=None,
         ),
     ]
-    
+
     return ModelListResponse(models=models, total=len(models))
 
 
@@ -91,10 +92,7 @@ async def train_model(
     This is a synchronous training endpoint. For long-running training,
     use the /jobs/train endpoint instead.
     """
-    from src.services.forecasting_service import ForecastingService
-    from src.services.ingestion_service import IngestionService
-    from src.preprocessing import DataPreprocessor
-    
+
     # This is a simplified version - in reality, we'd need the data to be loaded
     # For now, return a placeholder response
     return ModelTrainingResponse(
@@ -147,7 +145,7 @@ async def queue_training_job(
     Returns a job ID that can be polled for status.
     """
     job_id = _generate_job_id()
-    
+
     job_data = {
         "id": job_id,
         "job_type": "train",
@@ -160,12 +158,12 @@ async def queue_training_job(
         "result": None,
         "payload": request.dict(),
     }
-    
+
     _job_store[job_id] = job_data
-    
+
     # Add background task
     background_tasks.add_task(_run_training_job, job_id, request)
-    
+
     return JobCreateResponse(
         job_id=job_id,
         status=JobStatus.QUEUED,
@@ -178,17 +176,17 @@ async def _run_training_job(job_id: str, request: ModelTrainingJobRequest):
     job = _job_store.get(job_id)
     if not job:
         return
-    
+
     job["status"] = JobStatus.RUNNING.value
     job["started_at"] = datetime.utcnow()
-    
+
     try:
         # TODO: Implement actual training logic here
         # This would use ForecastingService.train_all_models()
         # For now, simulate completion
         import asyncio
         await asyncio.sleep(2)  # Simulate work
-        
+
         job["status"] = JobStatus.COMPLETED.value
         job["completed_at"] = datetime.utcnow()
         job["progress"] = 1.0
@@ -216,7 +214,7 @@ async def get_job_status(
     job = _job_store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail={"code": "JOB_NOT_FOUND", "message": f"Job {job_id} not found"})
-    
+
     return JobStatusResponse(**job)
 
 
@@ -233,14 +231,14 @@ async def list_jobs(
     """
     jobs = list(_job_store.values())
     total = len(jobs)
-    
+
     # Sort by creation time (newest first)
     jobs.sort(key=lambda x: x["created_at"], reverse=True)
-    
+
     # Paginate
     start = (page - 1) * page_size
     end = start + page_size
-    
+
     return {
         "jobs": jobs[start:end],
         "total": total,

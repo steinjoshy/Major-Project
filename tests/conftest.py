@@ -1,16 +1,17 @@
 """Pytest configuration and shared fixtures."""
 import sys
 from pathlib import Path
-import pytest
+
 import pandas as pd
-import numpy as np
+import pytest
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.preprocessing import DataPreprocessor
 from src.models.arima_xgboost import HybridArimaXGBoost
 from src.models.lstm_model import LSTMForecaster
+from src.preprocessing import DataPreprocessor
+
 
 @pytest.fixture(scope="session")
 def sample_data():
@@ -90,19 +91,19 @@ def pipeline_data():
     preprocessor = DataPreprocessor()
     df = pd.read_csv(ROOT / "data" / "sample_data" / "sales_data.csv")
     df_clean = preprocessor.clean_data(df, 'Date', 'Sales')
-    
+
     seq_length = 30
     test_size = 0.2
-    
+
     # Use NEW leakage-free method
     X_tr, X_te, y_tr, y_te, _ = preprocessor.prepare_lstm_data(
         df_clean, 'Sales', seq_length, test_size
     )
-    
+
     train_series, test_series, _ = preprocessor.prepare_hybrid_data(
         df_clean, 'Sales', test_size
     )
-    
+
     return {
         'df_clean': df_clean,
         'preprocessor': preprocessor,
@@ -114,6 +115,7 @@ def pipeline_data():
 
 # Suppress specific known warnings for cleaner test output
 import warnings
+
 warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
 warnings.filterwarnings("ignore", category=UserWarning, module="keras")
 

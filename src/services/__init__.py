@@ -5,25 +5,25 @@ This package provides pure-Python domain services extracted from the Streamlit m
 Services are designed to be used independently of any web framework.
 """
 
-from src.services.ingestion_service import IngestionService, IngestionError
 from src.services.forecasting_service import (
     ForecastingService,
+    ForecastResult,
     ModelConfig,
     TrainingResult,
-    ForecastResult,
 )
+from src.services.ingestion_service import IngestionError, IngestionService
 from src.services.inventory_service import (
-    InventoryService,
     InventoryParams,
-    InventoryRecommendations,
     InventoryProjection,
+    InventoryRecommendations,
+    InventoryService,
 )
 from src.services.model_comparison_service import (
+    ComparisonResult,
     ModelComparisonService,
     ModelMetrics,
-    ComparisonResult,
 )
-from src.services.model_registry import ModelRegistry, ModelMetadata, create_registry
+from src.services.model_registry import ModelMetadata, ModelRegistry, create_registry
 
 __all__ = [
     # Ingestion

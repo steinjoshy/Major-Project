@@ -1,8 +1,7 @@
 import numpy as np
-import pandas as pd
+from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor
-from sklearn.preprocessing import StandardScaler
 
 _FALLBACK_ARIMA_ORDERS = [(1, 1, 1), (0, 1, 1), (1, 1, 0), (0, 1, 0), (1, 0, 0)]
 

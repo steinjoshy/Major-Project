@@ -1,9 +1,10 @@
 """
 Health check endpoints.
 """
-from fastapi import APIRouter, Depends
-from backend.app.schemas.common import HealthResponse
+from fastapi import APIRouter
+
 from backend.app.core.config import get_settings
+from backend.app.schemas.common import HealthResponse
 
 router = APIRouter(tags=["health"])
 

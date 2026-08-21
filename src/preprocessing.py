@@ -1,7 +1,7 @@
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from datetime import timedelta
 
 # Minimum rows required for LSTM with default seq_length=30 and 80/20 split
 _MIN_ROWS_LSTM = 100
@@ -207,25 +207,25 @@ class DataPreprocessor:
             X_train, X_test, y_train, y_test, scaler
         """
         data = df[sales_col].values.reshape(-1, 1)
-        
+
         # Chronological split FIRST (before scaling)
         split_idx = int(len(data) * (1 - test_size))
         train_data = data[:split_idx]
         test_data = data[split_idx:]
-        
+
         # Fit scaler ONLY on training data
         scaler = MinMaxScaler()
         train_scaled = scaler.fit_transform(train_data)
         test_scaled = scaler.transform(test_data)
-        
+
         # Create sequences from each partition
         X_train, y_train = self._create_sequences(train_scaled, seq_length)
         X_test, y_test = self._create_sequences(test_scaled, seq_length)
-        
+
         # Store scaler for inverse transform
         self.scaler = scaler
         self.train_size = split_idx
-        
+
         return X_train, X_test, y_train, y_test, scaler
 
     def prepare_lstm_data_legacy(self, df, sales_col='Sales', seq_length=30):

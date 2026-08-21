@@ -3,7 +3,7 @@ API router initialization.
 """
 from fastapi import APIRouter
 
-from backend.app.api.routes import health, data, forecast, inventory, models, analytics
+from backend.app.api.routes import analytics, data, forecast, health, inventory, models
 
 api_router = APIRouter()
 

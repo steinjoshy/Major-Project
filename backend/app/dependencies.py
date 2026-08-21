@@ -1,25 +1,21 @@
 """
 API dependencies for dependency injection.
 """
-from typing import Generator, Optional
-from functools import lru_cache
-from fastapi import Depends, HTTPException, UploadFile, File, Form
-from typing import Optional
+from fastapi import File, HTTPException, UploadFile
 
-from src.services.ingestion_service import IngestionService, IngestionError
-from src.services.forecasting_service import ForecastingService, TrainingResult
-from src.services.inventory_service import InventoryService, InventoryParams
+from backend.app.core.config import get_settings
+from src.services.forecasting_service import ForecastingService
+from src.services.ingestion_service import IngestionService
+from src.services.inventory_service import InventoryService
 from src.services.model_comparison_service import ModelComparisonService
-from src.services.model_registry import ModelRegistry, ModelMetadata
-
-from backend.app.core.config import get_settings, Settings
+from src.services.model_registry import ModelRegistry
 
 # Service instances (singleton pattern for development)
-_ingestion_service: Optional[IngestionService] = None
-_forecasting_service: Optional[ForecastingService] = None
-_inventory_service: Optional[InventoryService] = None
-_comparison_service: Optional[ModelComparisonService] = None
-_model_registry: Optional[ModelRegistry] = None
+_ingestion_service: IngestionService | None = None
+_forecasting_service: ForecastingService | None = None
+_inventory_service: InventoryService | None = None
+_comparison_service: ModelComparisonService | None = None
+_model_registry: ModelRegistry | None = None
 
 
 def get_ingestion_service() -> IngestionService:
@@ -76,7 +72,7 @@ async def validate_upload_file(
     """Validate uploaded file."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
-    
+
     # Check file extension
     allowed_extensions = {'.csv', '.xlsx', '.xls'}
     file_ext = '.' + file.filename.split('.')[-1].lower() if '.' in file.filename else ''
@@ -85,7 +81,7 @@ async def validate_upload_file(
             status_code=400,
             detail=f"Unsupported file type. Allowed: {', '.join({'.csv', '.xlsx', '.xls'})}"
         )
-    
+
     return file
 
 

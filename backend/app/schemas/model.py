@@ -1,10 +1,9 @@
 """
 Model schemas for comparison and registry.
 """
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
-from enum import Enum
 
 
 class MetricType(str):
@@ -30,9 +29,9 @@ class ModelComparisonRequest(BaseModel):
 
 class ModelComparisonResponse(BaseModel):
     """Model comparison response."""
-    models: List[ModelMetrics]
+    models: list[ModelMetrics]
     best_model: str
-    best_metrics: Dict[str, float]
+    best_metrics: dict[str, float]
     improvement_pct: float
     metric_used: str
 
@@ -40,7 +39,7 @@ class ModelComparisonResponse(BaseModel):
 class BestModelResponse(BaseModel):
     """Best model response."""
     best_model: str
-    metrics: Dict[str, float]
+    metrics: dict[str, float]
     improvement_pct: float
 
 
@@ -50,12 +49,12 @@ class ModelRegistryEntry(BaseModel):
     model_type: str
     version: str
     created_at: str
-    training_config: Dict[str, Any] = {}
-    metrics: Dict[str, float] = {}
-    feature_config: Dict[str, Any] = {}
-    file_path: Optional[str] = None
+    training_config: dict[str, Any] = {}
+    metrics: dict[str, float] = {}
+    feature_config: dict[str, Any] = {}
+    file_path: str | None = None
     description: str = ""
-    tags: List[str] = []
+    tags: list[str] = []
 
 
 class ModelRegistryRequest(BaseModel):
@@ -63,18 +62,18 @@ class ModelRegistryRequest(BaseModel):
     name: str
     model_type: str
     version: str = "1.0.0"
-    training_config: Optional[Dict[str, Any]] = None
-    metrics: Optional[Dict[str, float]] = None
-    feature_config: Optional[Dict[str, Any]] = None
-    file_path: Optional[str] = None
+    training_config: dict[str, Any] | None = None
+    metrics: dict[str, float] | None = None
+    feature_config: dict[str, Any] | None = None
+    file_path: str | None = None
     description: str = ""
-    tags: List[str] = []
+    tags: list[str] = []
     overwrite: bool = False
 
 
 class ModelRegistryResponse(BaseModel):
     """Model registry response."""
-    models: List[Dict[str, Any]]
+    models: list[dict[str, Any]]
     total: int
 
 
@@ -84,9 +83,9 @@ class ModelRegistryDetailResponse(BaseModel):
     model_type: str
     version: str
     created_at: str
-    training_config: Dict[str, Any]
-    metrics: Dict[str, float]
-    feature_config: Dict[str, Any]
-    file_path: Optional[str]
+    training_config: dict[str, Any]
+    metrics: dict[str, float]
+    feature_config: dict[str, Any]
+    file_path: str | None
     description: str
-    tags: List[str]
+    tags: list[str]

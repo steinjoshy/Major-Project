@@ -1,11 +1,11 @@
 """
 Common schemas shared across the API.
 """
-from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from enum import Enum
+from typing import Any
+
 from pydantic import BaseModel, Field
-from typing_extensions import Annotated
 
 
 class ErrorResponse(BaseModel):
@@ -27,7 +27,7 @@ class ErrorDetail(BaseModel):
     """Error detail."""
     code: str = Field(..., description="Error code")
     message: str = Field(..., description="Human-readable error message")
-    details: Optional[Dict[str, Any]] = Field(
+    details: dict[str, Any] | None = Field(
         default=None,
         description="Additional error context"
     )
@@ -36,8 +36,8 @@ class ErrorDetail(BaseModel):
 class SuccessResponse(BaseModel):
     """Standard success response wrapper."""
     success: bool = True
-    message: Optional[str] = None
-    data: Optional[Any] = None
+    message: str | None = None
+    data: Any | None = None
 
 
 class PaginationParams(BaseModel):
@@ -48,7 +48,7 @@ class PaginationParams(BaseModel):
 
 class PaginatedResponse(BaseModel):
     """Paginated response wrapper."""
-    items: List[Any]
+    items: list[Any]
     total: int
     page: int
     page_size: int
@@ -77,10 +77,10 @@ class JobBase(BaseModel):
     id: str = Field(..., description="Unique job identifier")
     status: JobStatus = Field(..., description="Current job status")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
-    result: Optional[dict] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
+    result: dict | None = None
 
 
 class JobCreateResponse(BaseModel):
@@ -95,10 +95,10 @@ class JobStatusResponse(BaseModel):
     id: str
     status: JobStatus
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error: Optional[str] = None
-    result: Optional[dict] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
+    result: dict | None = None
 
 
 class FileUploadResponse(BaseModel):

@@ -1,10 +1,7 @@
 """
 Inventory optimization schemas.
 """
-from typing import Any, Dict, List, Optional, Union
-from datetime import datetime
 from pydantic import BaseModel, Field
-from enum import Enum
 
 
 class InventoryParams(BaseModel):
@@ -12,9 +9,9 @@ class InventoryParams(BaseModel):
     service_level: float = Field(default=0.95, gt=0.0, lt=1.0, description="Service level (0-1)")
     lead_time: int = Field(default=7, ge=1, le=365, description="Lead time in days")
     current_stock: float = Field(default=0.0, ge=0.0, description="Current stock level")
-    annual_demand: Optional[float] = Field(default=None, gt=0, description="Annual demand for EOQ")
-    holding_cost: Optional[float] = Field(default=None, gt=0, description="Holding cost per unit per year")
-    ordering_cost: Optional[float] = Field(default=None, gt=0, description="Ordering cost per order")
+    annual_demand: float | None = Field(default=None, gt=0, description="Annual demand for EOQ")
+    holding_cost: float | None = Field(default=None, gt=0, description="Holding cost per unit per year")
+    ordering_cost: float | None = Field(default=None, gt=0, description="Ordering cost per order")
 
 
 class InventoryRecommendationsResponse(BaseModel):
@@ -28,18 +25,18 @@ class InventoryRecommendationsResponse(BaseModel):
     z_score: float = Field(..., description="Z-score for service level")
     safety_stock_basis: str = Field(..., description="Basis for safety stock calculation")
     demand_during_lead_time: float = Field(..., description="Expected demand during lead time")
-    economic_order_quantity: Optional[float] = Field(None, description="EOQ if parameters provided")
-    stockout_risk: Optional[float] = Field(None, description="Stockout probability (0-1)")
-    overstock_risk: Optional[float] = Field(None, description="Overstock cost risk")
+    economic_order_quantity: float | None = Field(None, description="EOQ if parameters provided")
+    stockout_risk: float | None = Field(None, description="Stockout probability (0-1)")
+    overstock_risk: float | None = Field(None, description="Overstock cost risk")
 
 
 class InventoryProjectionRequest(BaseModel):
     """Request for inventory projection."""
-    forecast_demand: List[float] = Field(..., description="Forecasted daily demand")
+    forecast_demand: list[float] = Field(..., description="Forecasted daily demand")
     current_stock: float = Field(..., ge=0, description="Current stock level")
     lead_time: int = Field(default=7, ge=1, le=365, description="Lead time in days")
-    reorder_point: Optional[float] = Field(None, ge=0, description="Reorder point (optional)")
-    safety_stock: Optional[float] = Field(None, ge=0, description="Safety stock (optional)")
+    reorder_point: float | None = Field(None, ge=0, description="Reorder point (optional)")
+    safety_stock: float | None = Field(None, ge=0, description="Safety stock (optional)")
 
 
 class InventoryProjectionPoint(BaseModel):
@@ -52,10 +49,10 @@ class InventoryProjectionPoint(BaseModel):
 
 class InventoryProjectionResponse(BaseModel):
     """Inventory projection response."""
-    periods: List[int]
-    forecast_demand: List[float]
-    inventory_levels: List[float]
-    orders_placed: List[bool]
+    periods: list[int]
+    forecast_demand: list[float]
+    inventory_levels: list[float]
+    orders_placed: list[bool]
     reorder_point: float
     safety_stock: float
     lead_time: int
@@ -66,7 +63,7 @@ class InventoryProjectionResponse(BaseModel):
 
 class RiskAnalysisRequest(BaseModel):
     """Request for risk analysis."""
-    demand_data: List[float] = Field(..., description="Historical demand data")
+    demand_data: list[float] = Field(..., description="Historical demand data")
     current_stock: float = Field(..., ge=0, description="Current stock level")
     lead_time: int = Field(default=7, ge=1, description="Lead time in days")
     service_level: float = Field(default=0.95, gt=0, lt=1, description="Service level")
@@ -75,10 +72,10 @@ class RiskAnalysisRequest(BaseModel):
 class RiskAnalysisResponse(BaseModel):
     """Risk analysis response."""
     stockout_risk: float = Field(..., description="Stockout probability (0-1)")
-    overstock_risk: Optional[float] = Field(None, description="Overstock cost risk")
+    overstock_risk: float | None = Field(None, description="Overstock cost risk")
 
 
 class InventoryReportResponse(BaseModel):
     """Inventory report response."""
     report: str = Field(..., description="Formatted text report")
-    recommendations: Optional[dict] = None
+    recommendations: dict | None = None

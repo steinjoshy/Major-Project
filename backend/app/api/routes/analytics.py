@@ -1,15 +1,8 @@
 """
 Analytics endpoints for model insights.
 """
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Any, Dict, List, Optional
-from datetime import datetime
 
-from backend.app.schemas.common import SuccessResponse, ErrorResponse
-from backend.app.dependencies import get_comparison_service, get_forecasting_service
-from src.services.model_comparison_service import ModelComparisonService
-from src.services.forecasting_service import ForecastingService
-from backend.app.core.config import get_settings
+from fastapi import APIRouter, Depends
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -27,10 +20,10 @@ async def get_analytics_summary(
     """
     comparison_service = __import__("backend.app.dependencies", fromlist=["get_comparison_service"]).get_comparison_service()
     forecasting_service = __import__("backend.app.dependencies", fromlist=["get_forecasting_service"]).get_forecasting_service()
-    
+
     results = comparison_service.get_results()
     training_results = forecasting_service.get_training_results()
-    
+
     return {
         "models_evaluated": len(results),
         "models_trained": len(training_results),
@@ -70,7 +63,7 @@ async def get_data_quality():
         "message": "Data quality metrics will be available after data upload via /api/data/upload",
         "planned_metrics": [
             "Completeness",
-            "Consistency", 
+            "Consistency",
             "Timeliness",
             "Accuracy",
             "Outlier detection",

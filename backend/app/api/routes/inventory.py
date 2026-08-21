@@ -1,23 +1,18 @@
 """
 Inventory optimization endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, Form
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+
+from fastapi import APIRouter, Form, HTTPException
 
 from backend.app.schemas.inventory import (
     InventoryParams,
-    InventoryRecommendationsResponse,
     InventoryProjectionRequest,
     InventoryProjectionResponse,
+    InventoryRecommendationsResponse,
+    InventoryReportResponse,
     RiskAnalysisRequest,
     RiskAnalysisResponse,
-    InventoryReportResponse,
 )
-from backend.app.schemas.common import SuccessResponse, ErrorResponse
-from backend.app.dependencies import get_inventory_service
-from src.services.inventory_service import InventoryService, InventoryParams as ServiceInventoryParams
-from backend.app.core.config import get_settings
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -28,13 +23,13 @@ router = APIRouter(prefix="/inventory", tags=["inventory"])
     summary="Generate inventory recommendations",
 )
 async def analyze_inventory(
-    demand_data: List[float] = Form(...),
+    demand_data: list[float] = Form(...),
     lead_time: int = Form(default=7, ge=1, le=365),
     service_level: float = Form(default=0.95, gt=0.0, lt=1.0),
-    forecast_data: Optional[List[float]] = Form(None),
-    annual_demand: Optional[float] = Form(None, gt=0),
-    holding_cost: Optional[float] = Form(None, gt=0),
-    ordering_cost: Optional[float] = Form(None, gt=0),
+    forecast_data: list[float] | None = Form(None),
+    annual_demand: float | None = Form(None, gt=0),
+    holding_cost: float | None = Form(None, gt=0),
+    ordering_cost: float | None = Form(None, gt=0),
 ):
     """
     Generate comprehensive inventory recommendations.
@@ -48,7 +43,7 @@ async def analyze_inventory(
     """
     try:
         inventory_service = __import__("backend.app.dependencies", fromlist=["get_inventory_service"]).get_inventory_service()
-        
+
         params = InventoryParams(
             service_level=service_level,
             lead_time=lead_time,
@@ -56,15 +51,15 @@ async def analyze_inventory(
             holding_cost=holding_cost,
             ordering_cost=ordering_cost,
         )
-        
+
         recommendations = inventory_service.generate_recommendations(
             demand_data=demand_data,
             params=params,
             forecast_data=forecast_data,
         )
-        
+
         return InventoryRecommendationsResponse(**recommendations.to_dict())
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Analysis failed: {str(e)}"})
 
@@ -84,7 +79,7 @@ async def project_inventory(
     """
     try:
         inventory_service = __import__("backend.app.dependencies", fromlist=["get_inventory_service"]).get_inventory_service()
-        
+
         projection = inventory_service.project_inventory(
             forecast_demand=request.forecast_demand,
             current_stock=request.current_stock,
@@ -92,7 +87,7 @@ async def project_inventory(
             lead_time=request.lead_time,
             safety_stock=request.safety_stock,
         )
-        
+
         return InventoryProjectionResponse(
             periods=projection.periods.tolist(),
             forecast_demand=projection.forecast_demand.tolist(),
@@ -105,7 +100,7 @@ async def project_inventory(
             below_safety_stock_days=projection.get_below_safety_stock_days(),
             total_orders_placed=projection.get_total_orders_placed(),
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Projection failed: {str(e)}"})
 
@@ -123,23 +118,23 @@ async def analyze_risk(
     """
     try:
         inventory_service = __import__("backend.app.dependencies", fromlist=["get_inventory_service"]).get_inventory_service()
-        
+
         stockout_risk = inventory_service.calculate_stockout_risk(
             demand_data=request.demand_data,
             current_stock=request.current_stock,
             lead_time=request.lead_time,
             service_level=request.service_level,
         )
-        
+
         overstock_risk = None
         # Overstock risk requires holding cost
         # Could add holding_cost to request if needed
-        
+
         return RiskAnalysisResponse(
             stockout_risk=stockout_risk,
             overstock_risk=overstock_risk,
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Risk analysis failed: {str(e)}"})
 
@@ -150,20 +145,20 @@ async def analyze_risk(
     summary="Generate inventory report",
 )
 async def generate_report(
-    demand_data: List[float] = Form(...),
+    demand_data: list[float] = Form(...),
     lead_time: int = Form(default=7, ge=1, le=365),
     service_level: float = Form(default=0.95, gt=0.0, lt=1.0),
-    forecast_data: Optional[List[float]] = Form(None),
-    annual_demand: Optional[float] = Form(None, gt=0),
-    holding_cost: Optional[float] = Form(None, gt=0),
-    ordering_cost: Optional[float] = Form(None, gt=0),
+    forecast_data: list[float] | None = Form(None),
+    annual_demand: float | None = Form(None, gt=0),
+    holding_cost: float | None = Form(None, gt=0),
+    ordering_cost: float | None = Form(None, gt=0),
 ):
     """
     Generate a human-readable inventory optimization report.
     """
     try:
         inventory_service = __import__("backend.app.dependencies", fromlist=["get_inventory_service"]).get_inventory_service()
-        
+
         params = InventoryParams(
             service_level=service_level,
             lead_time=lead_time,
@@ -171,20 +166,20 @@ async def generate_report(
             holding_cost=holding_cost,
             ordering_cost=ordering_cost,
         )
-        
+
         recommendations = inventory_service.generate_recommendations(
             demand_data=demand_data,
             params=params,
             forecast_data=forecast_data,
         )
-        
+
         report = inventory_service.generate_report(recommendations)
-        
+
         return InventoryReportResponse(
             report=report,
             recommendations=recommendations.to_dict(),
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Report generation failed: {str(e)}"})
 
@@ -201,13 +196,12 @@ async def calculate_safety_stock(
     """
     Calculate safety stock from demand standard deviation.
     """
-    from scipy import stats as scipy_stats
     from src.inventory.optimization import InventoryOptimization
-    
+
     try:
         optimizer = InventoryOptimization(service_level=service_level)
         ss = optimizer.calculate_safety_stock(demand_std, lead_time)
-        
+
         return {
             "safety_stock": ss,
             "z_score": optimizer.z_score,
@@ -231,11 +225,11 @@ async def calculate_reorder_point(
     Calculate reorder point from average demand, lead time, and safety stock.
     """
     from src.inventory.optimization import InventoryOptimization
-    
+
     try:
         optimizer = InventoryOptimization(service_level=0.95)
         rop = optimizer.calculate_reorder_point(avg_demand, lead_time, safety_stock)
-        
+
         return {
             "reorder_point": rop,
             "avg_demand": avg_demand,
@@ -260,14 +254,14 @@ async def calculate_eoq(
     Calculate Economic Order Quantity (EOQ).
     """
     from src.inventory.optimization import InventoryOptimization
-    
+
     try:
         optimizer = InventoryOptimization(service_level=0.95)
         eoq = optimizer.calculate_economic_order_quantity(annual_demand, holding_cost, ordering_cost)
-        
+
         if eoq is None:
             raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": "Invalid input parameters for EOQ"})
-        
+
         return {
             "economic_order_quantity": eoq,
             "annual_demand": annual_demand,

@@ -4,14 +4,14 @@ Model Registry for AI Demand Forecasting.
 Provides model lifecycle management: registration, retrieval, metadata.
 Pure Python service with no Streamlit dependencies.
 """
-import os
+import builtins
 import json
-import time
-import joblib
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import joblib
 
 
 @dataclass
@@ -21,19 +21,19 @@ class ModelMetadata:
     model_type: str  # 'lstm', 'hybrid', 'arima', 'xgboost', etc.
     version: str = "1.0.0"
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    training_config: Dict[str, Any] = field(default_factory=dict)
-    metrics: Dict[str, float] = field(default_factory=dict)
-    feature_config: Dict[str, Any] = field(default_factory=dict)
-    file_path: Optional[str] = None
+    training_config: dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, float] = field(default_factory=dict)
+    feature_config: dict[str, Any] = field(default_factory=dict)
+    file_path: str | None = None
     description: str = ""
-    tags: List[str] = field(default_factory=list)
-    
-    def to_dict(self) -> Dict[str, Any]:
+    tags: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ModelMetadata':
+    def from_dict(cls, data: dict[str, Any]) -> 'ModelMetadata':
         """Create from dictionary."""
         return cls(**data)
 
@@ -46,40 +46,40 @@ class ModelRegistry:
     Supports in-memory storage with optional file-based persistence.
     No Streamlit dependencies.
     """
-    
-    def __init__(self, storage_dir: Optional[Union[str, Path]] = None):
+
+    def __init__(self, storage_dir: str | Path | None = None):
         """
         Initialize the model registry.
         
         Args:
             storage_dir: Optional directory for persisting metadata
         """
-        self._models: Dict[str, ModelMetadata] = {}
-        self._model_objects: Dict[str, Any] = {}
-        
+        self._models: dict[str, ModelMetadata] = {}
+        self._model_objects: dict[str, Any] = {}
+
         if storage_dir is not None:
             self.storage_dir = Path(storage_dir)
             self.storage_dir.mkdir(parents=True, exist_ok=True)
             self._load_metadata()
         else:
             self.storage_dir = None
-    
+
     # ------------------------------------------------------------------
     # Core Registry Operations
     # ------------------------------------------------------------------
-    
+
     def register(
         self,
         name: str,
         model_type: str,
         model_object: Any = None,
         version: str = "1.0.0",
-        training_config: Optional[Dict[str, Any]] = None,
-        metrics: Optional[Dict[str, float]] = None,
-        feature_config: Optional[Dict[str, Any]] = None,
-        file_path: Optional[str] = None,
+        training_config: dict[str, Any] | None = None,
+        metrics: dict[str, float] | None = None,
+        feature_config: dict[str, Any] | None = None,
+        file_path: str | None = None,
         description: str = "",
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
         overwrite: bool = False,
     ) -> ModelMetadata:
         """
@@ -106,7 +106,7 @@ class ModelRegistry:
         """
         if name in self._models and not overwrite:
             raise ValueError(f"Model '{name}' already exists. Use overwrite=True to replace.")
-        
+
         metadata = ModelMetadata(
             name=name,
             model_type=model_type,
@@ -118,17 +118,17 @@ class ModelRegistry:
             description=description,
             tags=tags or [],
         )
-        
+
         self._models[name] = metadata
         if model_object is not None:
             self._model_objects[name] = model_object
-        
+
         if self.storage_dir:
             self._save_metadata()
-        
+
         return metadata
-    
-    def get(self, name: str) -> Optional[ModelMetadata]:
+
+    def get(self, name: str) -> ModelMetadata | None:
         """
         Get model metadata by name.
         
@@ -139,8 +139,8 @@ class ModelRegistry:
             ModelMetadata or None if not found
         """
         return self._models.get(name)
-    
-    def get_object(self, name: str) -> Optional[Any]:
+
+    def get_object(self, name: str) -> Any | None:
         """
         Get model object by name (in-memory).
         
@@ -151,11 +151,11 @@ class ModelRegistry:
             Model object or None
         """
         return self._model_objects.get(name)
-    
+
     def exists(self, name: str) -> bool:
         """Check if model exists in registry."""
         return name in self._models
-    
+
     def remove(self, name: str) -> bool:
         """
         Remove a model from the registry.
@@ -168,16 +168,16 @@ class ModelRegistry:
         """
         if name not in self._models:
             return False
-        
+
         del self._models[name]
         self._model_objects.pop(name, None)
-        
+
         if self.storage_dir:
             self._save_metadata()
-        
+
         return True
-    
-    def list(self, model_type: Optional[str] = None) -> List[ModelMetadata]:
+
+    def list(self, model_type: str | None = None) -> list[ModelMetadata]:
         """
         List all registered models.
         
@@ -191,44 +191,44 @@ class ModelRegistry:
         if model_type:
             models = [m for m in models if m.model_type == model_type]
         return sorted(models, key=lambda m: m.created_at, reverse=True)
-    
-    def list_names(self, model_type: Optional[str] = None) -> List[str]:
+
+    def list_names(self, model_type: str | None = None) -> builtins.list[str]:
         """List model names."""
         return [m.name for m in self.list(model_type)]
-    
+
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
-    
+
     def _save_metadata(self) -> None:
         """Save metadata to storage directory."""
         if not self.storage_dir:
             return
-        
+
         metadata_file = self.storage_dir / "registry_metadata.json"
         data = {
-            name: meta.to_dict() 
+            name: meta.to_dict()
             for name, meta in self._models.items()
         }
-        
+
         with open(metadata_file, 'w') as f:
             json.dump(data, f, indent=2)
-    
+
     def _load_metadata(self) -> None:
         """Load metadata from storage directory."""
         if not self.storage_dir:
             return
-        
+
         metadata_file = self.storage_dir / "registry_metadata.json"
         if not metadata_file.exists():
             return
-        
-        with open(metadata_file, 'r') as f:
+
+        with open(metadata_file) as f:
             data = json.load(f)
-        
+
         for name, meta_dict in data.items():
             self._models[name] = ModelMetadata.from_dict(meta_dict)
-    
+
     def save_model_object(
         self,
         name: str,
@@ -248,10 +248,10 @@ class ModelRegistry:
         """
         if name not in self._model_objects:
             return False
-        
+
         obj = self._model_objects[name]
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-        
+
         try:
             if serializer == 'joblib':
                 joblib.dump(obj, filepath)
@@ -263,18 +263,18 @@ class ModelRegistry:
                     obj.save(filepath)
             else:
                 raise ValueError(f"Unknown serializer: {serializer}")
-            
+
             # Update metadata
             if name in self._models:
                 self._models[name].file_path = filepath
                 if self.storage_dir:
                     self._save_metadata()
-            
+
             return True
         except Exception as e:
             print(f"Failed to save model: {e}")
             return False
-    
+
     def load_model_object(
         self,
         name: str,
@@ -314,18 +314,18 @@ class ModelRegistry:
                     obj = load_model(filepath)
             else:
                 raise ValueError(f"Unknown serializer: {serializer}")
-            
+
             self._model_objects[name] = obj
             return True
         except Exception as e:
             print(f"Failed to load model: {e}")
             return False
-    
+
     # ------------------------------------------------------------------
     # Utility Methods
     # ------------------------------------------------------------------
-    
-    def update_metrics(self, name: str, metrics: Dict[str, float]) -> bool:
+
+    def update_metrics(self, name: str, metrics: dict[str, float]) -> bool:
         """Update model metrics."""
         if name not in self._models:
             return False
@@ -333,8 +333,8 @@ class ModelRegistry:
         if self.storage_dir:
             self._save_metadata()
         return True
-    
-    def update_config(self, name: str, config: Dict[str, Any]) -> bool:
+
+    def update_config(self, name: str, config: dict[str, Any]) -> bool:
         """Update training configuration."""
         if name not in self._models:
             return False
@@ -342,8 +342,8 @@ class ModelRegistry:
         if self.storage_dir:
             self._save_metadata()
         return True
-    
-    def add_tags(self, name: str, tags: List[str]) -> bool:
+
+    def add_tags(self, name: str, tags: builtins.list[str]) -> bool:
         """Add tags to model."""
         if name not in self._models:
             return False
@@ -351,34 +351,34 @@ class ModelRegistry:
         if self.storage_dir:
             self._save_metadata()
         return True
-    
-    def get_by_tag(self, tag: str) -> List[ModelMetadata]:
+
+    def get_by_tag(self, tag: str) -> builtins.list[ModelMetadata]:
         """Get models with a specific tag."""
         return [m for m in self._models.values() if tag in m.tags]
-    
-    def get_latest(self, model_type: Optional[str] = None) -> Optional[ModelMetadata]:
+
+    def get_latest(self, model_type: str | None = None) -> ModelMetadata | None:
         """Get most recently registered model."""
         models = self.list(model_type)
         return models[0] if models else None
-    
+
     def clear(self) -> None:
         """Clear all models from registry."""
         self._models.clear()
         self._model_objects.clear()
         if self.storage_dir:
             self._save_metadata()
-    
+
     def __len__(self) -> int:
         return len(self._models)
-    
+
     def __contains__(self, name: str) -> bool:
         return name in self._models
-    
+
     def __iter__(self):
         return iter(self._models.values())
 
 
 # Convenience function for creating a default registry
-def create_registry(storage_dir: Optional[str] = None) -> ModelRegistry:
+def create_registry(storage_dir: str | None = None) -> ModelRegistry:
     """Create a ModelRegistry with default settings."""
     return ModelRegistry(storage_dir)

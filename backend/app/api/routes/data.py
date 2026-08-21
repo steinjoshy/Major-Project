@@ -1,57 +1,56 @@
 """
 Data ingestion endpoints.
 """
-import io
 import tempfile
 from pathlib import Path
-from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from typing import Any, Dict, List
-import pandas as pd
 
+import pandas as pd
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
+from backend.app.schemas.common import ErrorResponse, SuccessResponse
 from backend.app.schemas.data import (
-    DataUploadResponse,
-    DataSummary,
-    ValidationResult,
     ColumnDetectionResponse,
     DataCleanRequest,
     DataCleanResponse,
-    LSTMDataPrepRequest,
-    LSTMDataPrepResponse,
+    DataPreviewResponse,
+    DataSummary,
+    DataUploadResponse,
+    FeatureEngineeringRequest,
     HybridDataPrepRequest,
     HybridDataPrepResponse,
-    FeatureEngineeringRequest,
-    DataPreviewResponse,
-    ColumnDetectionResponse,
+    LSTMDataPrepRequest,
+    LSTMDataPrepResponse,
+    ValidationResult,
 )
-from backend.app.schemas.common import SuccessResponse, ErrorResponse, PaginationParams, PaginatedResponse
-from backend.app.dependencies import get_ingestion_service, validate_upload_file
-from src.services.ingestion_service import IngestionService, IngestionError
-from backend.app.core.config import get_settings
+from src.services.ingestion_service import IngestionError
 
 router = APIRouter(prefix="/data", tags=["data"])
 
 
 def _save_upload_file(file: UploadFile) -> str:
     """Save uploaded file to temporary location and return path."""
-    import os
-    import tempfile
-    
+
     # Create temp directory if not exists
     temp_dir = Path(tempfile.gettempdir()) / "demand_forecasting_uploads"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Generate safe filename
     import uuid
     ext = Path(file.filename).suffix.lower()
     safe_name = f"{uuid.uuid4().hex}{Path(file.filename).suffix.lower()}"
     file_path = temp_dir / safe_name
-    
+
     # Write file
     with open(file_path, "wb") as f:
         content = file.file.read()
+        if not content:
+            import logging
+            logging.error("Uploaded file is empty")
+            raise HTTPException(status_code=400, detail={"code": "EMPTY_FILE", "message": "Uploaded file is empty"})
+        logging.info(f"File saved to {file_path}, size: {len(content)} bytes")
         f.write(content)
-    
+
+    logging.info(f"File saved to {file_path}, size: {len(content)} bytes")
     return str(file_path)
 
 
@@ -68,11 +67,12 @@ def _save_upload_file(file: UploadFile) -> str:
 )
 async def upload_data(
     file: UploadFile = File(...),
-    date_column: Optional[str] = Form(None),
-    sales_column: Optional[str] = Form(None),
+    date_column: str | None = Form(None),
+    sales_column: str | None = Form(None),
     ingestion_service = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_ingestion_service"]).get_ingestion_service()),
-):
+    ):
     """
+    Upload and preprocess a CSV file for demand forecasting.
     Upload and preprocess a CSV file for demand forecasting.
     
     - **file**: CSV file with date and sales/demand columns
@@ -85,10 +85,11 @@ async def upload_data(
     - Multiple files merged by date
     - Large files via chunked reading or DuckDB
     """
+    file_path = None
     try:
         # Save uploaded file
         file_path = _save_upload_file(file)
-        
+
         # Process through ingestion service
         ingestion_service = __import__("backend.app.dependencies", fromlist=["get_ingestion_service"]).get_ingestion_service()
         df, meta = ingestion_service.load_from_csv(
@@ -96,14 +97,14 @@ async def upload_data(
             date_col=date_column,
             sales_col=sales_column,
         )
-        
+
         # Clean up temp file
         import os
         try:
             os.unlink(file_path)
         except Exception:
             pass
-        
+
         # Build summary
         summary = DataSummary(
             rows=meta["n_rows"],
@@ -113,7 +114,7 @@ async def upload_data(
             sales_column=meta["sales_col"],
             warnings=meta.get("warnings", []),
         )
-        
+
         # Read column info
         column_info = []
         for col in df.columns:
@@ -128,18 +129,38 @@ async def upload_data(
             col_info["sample_values"] = df[col].head(3).tolist() if len(df) > 0 else []
             column_info.append(col_info)
         summary.column_info = column_info
-        
+
         return DataUploadResponse(
             success=True,
             upload_id=Path(file_path).stem,
             summary=summary,
             warnings=meta.get("warnings", []),
         )
-        
+
     except IngestionError as e:
-        raise HTTPException(status_code=400, detail={"code": "INGESTION_ERROR", "message": str(e)})
+        # Clean up temp file on error
+        import os
+        try:
+            os.unlink(file_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail={"code": "INGESTION_ERROR", "message": str(e), "details": None})
+    except HTTPException:
+        # Re-raise HTTPException without wrapping
+        import os
+        try:
+            os.unlink(file_path)
+        except Exception:
+            pass
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Upload failed: {str(e)}"})
+        # Clean up temp file on error
+        import os
+        try:
+            os.unlink(file_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Upload failed: {str(e)}", "details": None})
 
 
 @router.post(
@@ -149,8 +170,8 @@ async def upload_data(
 )
 async def validate_data(
     file: UploadFile = File(...),
-    date_column: Optional[str] = Form(None),
-    sales_column: Optional[str] = Form(None),
+    date_column: str | None = Form(None),
+    sales_column: str | None = Form(None),
 ):
     """
     Validate a CSV file without full processing.
@@ -159,22 +180,22 @@ async def validate_data(
     """
     try:
         file_path = _save_upload_file(file)
-        
+
         try:
             ingestion_service = __import__("backend.app.dependencies", fromlist=["get_ingestion_service"]).get_ingestion_service()
             df = pd.read_csv(file_path, nrows=1000)
-            
+
             # Try to detect columns
             date_col = date_column
             sales_col = sales_column
-            
+
             if date_column is None or sales_column is None:
                 from src.services.ingestion_service import IngestionService
                 temp_service = IngestionService()
                 auto_dc, auto_sc = temp_service._auto_detect_cols(list(df.columns))
                 date_col = date_col or auto_dc
                 sales_col = sales_col or auto_sc
-            
+
             if date_col is None or sales_col is None:
                 return ValidationResult(
                     valid=False,
@@ -183,10 +204,10 @@ async def validate_data(
                     errors=["Could not auto-detect date/sales columns"],
                     warnings=[],
                 )
-            
+
             # Validate
             is_valid, messages = temp_service.validate_data(df, date_col, sales_col)
-            
+
             return ValidationResult(
                 valid=is_valid,
                 rows=len(df),
@@ -200,7 +221,9 @@ async def validate_data(
                 os.unlink(file_path)
             except Exception:
                 pass
-                
+
+    except IngestionError as e:
+        raise HTTPException(status_code=400, detail={"code": "INGESTION_ERROR", "message": str(e)})
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Validation failed: {str(e)}"})
 
@@ -218,18 +241,18 @@ async def detect_columns(
     """
     try:
         file_path = _save_upload_file(file)
-        
+
         try:
             df = pd.read_csv(file_path, nrows=1)
             ingestion_service = __import__("backend.app.dependencies", fromlist=["get_ingestion_service"]).get_ingestion_service()
             date_col, sales_col = ingestion_service._auto_detect_cols(list(df.columns))
-            
+
             detected = {}
             if date_col:
                 detected["date_column"] = date_col
             if sales_col:
                 detected["sales_column"] = sales_col
-            
+
             return ColumnDetectionResponse(
                 date_column=date_col,
                 sales_column=sales_col,

@@ -1,10 +1,11 @@
 """
 Job queue schemas.
 """
-from typing import Any, Dict, List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
 from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class JobStatus(str, Enum):
@@ -27,7 +28,7 @@ class JobType(str):
 class JobCreate(BaseModel):
     """Job creation request."""
     job_type: JobType = Field(..., description="Type of job to execute")
-    payload: Dict[str, Any] = Field(default_factory=dict, description="Job parameters")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Job parameters")
 
 
 class JobCreateResponse(BaseModel):
@@ -44,17 +45,17 @@ class JobStatusResponse(BaseModel):
     job_type: str
     status: str
     created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    progress: Optional[float] = None
-    error: Optional[str] = None
-    result: Optional[Dict[str, Any]] = None
-    payload: Dict[str, Any] = {}
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    progress: float | None = None
+    error: str | None = None
+    result: dict[str, Any] | None = None
+    payload: dict[str, Any] = {}
 
 
 class JobListResponse(BaseModel):
     """Job list response."""
-    jobs: List[Dict[str, Any]]
+    jobs: list[dict[str, Any]]
     total: int
     page: int
     page_size: int

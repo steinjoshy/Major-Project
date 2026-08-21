@@ -3,16 +3,16 @@ FastAPI application entry point.
 """
 import os
 from contextlib import asynccontextmanager
-from typing import Optional
+
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.app.api.routes import api_router
-from backend.app.core.config import get_settings, Settings
-from backend.app.schemas.common import ErrorResponse, ErrorDetail
+from backend.app.core.config import Settings, get_settings
+from backend.app.schemas.common import ErrorDetail, ErrorResponse
 
 
 @asynccontextmanager
@@ -20,21 +20,21 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     settings = get_settings()
-    
+
     # Create upload directory
     os.makedirs(settings.upload_dir, exist_ok=True)
-    
+
     yield
-    
+
     # Shutdown
     pass
 
 
-def create_app(settings: Optional[Settings] = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     if settings is None:
         settings = get_settings()
-    
+
     app = FastAPI(
         title=settings.app_name,
         version="1.0.0",
@@ -44,7 +44,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         openapi_url="/openapi.json",
         lifespan=lifespan,
     )
-    
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -53,7 +53,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Exception handlers
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request, exc):
@@ -66,7 +66,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 )
             ).model_dump(),
         )
-    
+
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request, exc):
         return JSONResponse(
@@ -79,13 +79,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 )
             ).model_dump(),
         )
-    
+
     @app.exception_handler(Exception)
     async def general_exception_handler(request, exc):
         # Log the actual exception server-side
         import logging
         logging.exception("Unhandled exception")
-        
+
         return JSONResponse(
             status_code=500,
             content=ErrorResponse(
@@ -95,10 +95,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 )
             ).model_dump(),
         )
-    
+
     # Include API router
     app.include_router(api_router, prefix="/api")
-    
+
     # Root endpoint
     @app.get("/")
     async def root():
@@ -108,7 +108,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "docs": "/docs",
             "health": "/api/health",
         }
-    
+
     return app
 
 

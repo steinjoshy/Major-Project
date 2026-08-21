@@ -6,27 +6,27 @@ Pages: Dashboard | Data | EDA | Train Models | Model Comparison |
        Forecast | Inventory | Reports | Settings
 """
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-import sys
-import os
 import io
+import os
+import sys
 import tempfile
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 
 # ── Path Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT))
 
-from src.preprocessing import DataPreprocessor
 from src.eda import ExploratoryAnalysis
-from src.models.lstm_model import LSTMForecaster
-from src.models.arima_xgboost import HybridArimaXGBoost
-from src.models.model_comparison import ModelComparison
 from src.inventory.optimization import InventoryOptimization
+from src.models.arima_xgboost import HybridArimaXGBoost
+from src.models.lstm_model import LSTMForecaster
+from src.models.model_comparison import ModelComparison
+from src.preprocessing import DataPreprocessor
 
 try:
     import duckdb
@@ -1494,7 +1494,7 @@ def _page_data():
 
             except Exception as exc:
                 prog.empty()
-                st.error(f'Failed to load dataset.')
+                st.error('Failed to load dataset.')
                 with st.expander('Technical details'):
                     st.code(str(exc))
                 return

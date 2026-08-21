@@ -4,10 +4,11 @@ Inventory Service for AI Demand Forecasting.
 Provides inventory optimization calculations: Safety Stock, ROP, EOQ, projections.
 Pure Python service with no Streamlit dependencies.
 """
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass, field
 from scipy import stats as scipy_stats
 
 from src.inventory.optimization import InventoryOptimization
@@ -19,9 +20,9 @@ class InventoryParams:
     service_level: float = 0.95
     lead_time: int = 7
     current_stock: float = 0.0
-    annual_demand: Optional[float] = None
-    holding_cost: Optional[float] = None
-    ordering_cost: Optional[float] = None
+    annual_demand: float | None = None
+    holding_cost: float | None = None
+    ordering_cost: float | None = None
 
 
 @dataclass
@@ -36,11 +37,11 @@ class InventoryRecommendations:
     z_score: float
     safety_stock_basis: str
     demand_during_lead_time: float
-    economic_order_quantity: Optional[float] = None
-    stockout_risk: Optional[float] = None
-    overstock_risk: Optional[float] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
+    economic_order_quantity: float | None = None
+    stockout_risk: float | None = None
+    overstock_risk: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             'safety_stock': self.safety_stock,
@@ -68,7 +69,7 @@ class InventoryProjection:
     reorder_point: float
     safety_stock: float
     lead_time: int
-    
+
     def to_dataframe(self) -> pd.DataFrame:
         """Convert to pandas DataFrame."""
         return pd.DataFrame({
@@ -77,15 +78,15 @@ class InventoryProjection:
             'Inventory_Level': np.round(self.inventory_levels, 1),
             'Order_Placed': self.orders_placed,
         })
-    
+
     def get_stockout_days(self) -> int:
         """Count days with zero inventory."""
         return int(np.sum(self.inventory_levels <= 0))
-    
+
     def get_below_safety_stock_days(self) -> int:
         """Count days below safety stock."""
         return int(np.sum(self.inventory_levels <= self.safety_stock))
-    
+
     def get_total_orders_placed(self) -> int:
         """Count total orders placed."""
         return int(np.sum(self.orders_placed))
@@ -98,7 +99,7 @@ class InventoryService:
     Supports Safety Stock, Reorder Point, EOQ, inventory projections,
     and risk analysis. No Streamlit dependencies.
     """
-    
+
     def __init__(self, service_level: float = 0.95):
         """
         Initialize the inventory service.
@@ -109,13 +110,13 @@ class InventoryService:
         if not 0 < service_level < 1:
             raise ValueError("service_level must be between 0 and 1")
         self.optimizer = InventoryOptimization(service_level=service_level)
-        self._last_recommendations: Optional[InventoryRecommendations] = None
-        self._last_projection: Optional[InventoryProjection] = None
-    
+        self._last_recommendations: InventoryRecommendations | None = None
+        self._last_projection: InventoryProjection | None = None
+
     # ------------------------------------------------------------------
     # Core Calculations
     # ------------------------------------------------------------------
-    
+
     def calculate_safety_stock(
         self,
         demand_std: float,
@@ -132,10 +133,10 @@ class InventoryService:
             Safety stock quantity
         """
         return self.optimizer.calculate_safety_stock(demand_std, lead_time)
-    
+
     def calculate_forecast_based_safety_stock(
         self,
-        forecast_array: Union[np.ndarray, List[float]],
+        forecast_array: np.ndarray | list[float],
         lead_time: int = 1,
     ) -> float:
         """
@@ -151,7 +152,7 @@ class InventoryService:
         return self.optimizer.calculate_forecast_based_safety_stock(
             np.asarray(forecast_array), lead_time
         )
-    
+
     def calculate_reorder_point(
         self,
         avg_demand: float,
@@ -170,13 +171,13 @@ class InventoryService:
             Reorder point
         """
         return self.optimizer.calculate_reorder_point(avg_demand, lead_time, safety_stock)
-    
+
     def calculate_economic_order_quantity(
         self,
         annual_demand: float,
         holding_cost: float,
         ordering_cost: float,
-    ) -> Optional[float]:
+    ) -> float | None:
         """
         Calculate Economic Order Quantity.
         
@@ -191,11 +192,11 @@ class InventoryService:
         return self.optimizer.calculate_economic_order_quantity(
             annual_demand, holding_cost, ordering_cost
         )
-    
+
     def calculate_demand_statistics(
         self,
-        demand_data: Union[np.ndarray, List[float]],
-    ) -> Dict[str, float]:
+        demand_data: np.ndarray | list[float],
+    ) -> dict[str, float]:
         """
         Calculate demand descriptive statistics.
         
@@ -206,7 +207,7 @@ class InventoryService:
             Dictionary with mean, std, min, max, CV, n_periods
         """
         return self.optimizer.calculate_demand_statistics(demand_data)
-    
+
     def calculate_lead_time_demand(
         self,
         avg_demand: float,
@@ -223,16 +224,16 @@ class InventoryService:
             Lead time demand
         """
         return avg_demand * lead_time
-    
+
     # ------------------------------------------------------------------
     # High-Level Recommendations
     # ------------------------------------------------------------------
-    
+
     def generate_recommendations(
         self,
-        demand_data: Union[np.ndarray, List[float]],
-        params: Optional[InventoryParams] = None,
-        forecast_data: Optional[Union[np.ndarray, List[float]]] = None,
+        demand_data: np.ndarray | list[float],
+        params: InventoryParams | None = None,
+        forecast_data: np.ndarray | list[float] | None = None,
     ) -> InventoryRecommendations:
         """
         Generate comprehensive inventory recommendations.
@@ -247,10 +248,10 @@ class InventoryService:
         """
         if params is None:
             params = InventoryParams()
-        
+
         self.optimizer.service_level = params.service_level
         self.optimizer.z_score = float(scipy_stats.norm.ppf(params.service_level))
-        
+
         # Generate recommendations using the optimizer
         recs = self.optimizer.generate_inventory_recommendations(
             demand_data=np.asarray(demand_data, dtype=float),
@@ -260,7 +261,7 @@ class InventoryService:
             holding_cost=params.holding_cost,
             ordering_cost=params.ordering_cost,
         )
-        
+
         self._last_recommendations = InventoryRecommendations(
             safety_stock=recs['safety_stock'],
             reorder_point=recs['reorder_point'],
@@ -273,18 +274,18 @@ class InventoryService:
             demand_during_lead_time=recs['demand_during_lead_time'],
             economic_order_quantity=recs.get('economic_order_quantity'),
         )
-        
+
         return self._last_recommendations
-    
+
     def generate_recommendations_simple(
         self,
-        demand_data: Union[np.ndarray, List[float]],
+        demand_data: np.ndarray | list[float],
         lead_time: int = 7,
         service_level: float = 0.95,
-        forecast_data: Optional[Union[np.ndarray, List[float]]] = None,
-        annual_demand: Optional[float] = None,
-        holding_cost: Optional[float] = None,
-        ordering_cost: Optional[float] = None,
+        forecast_data: np.ndarray | list[float] | None = None,
+        annual_demand: float | None = None,
+        holding_cost: float | None = None,
+        ordering_cost: float | None = None,
     ) -> InventoryRecommendations:
         """
         Simplified interface for generating recommendations.
@@ -309,18 +310,18 @@ class InventoryService:
             ordering_cost=ordering_cost,
         )
         return self.generate_recommendations(demand_data, params, forecast_data)
-    
+
     # ------------------------------------------------------------------
     # Inventory Projection
     # ------------------------------------------------------------------
-    
+
     def project_inventory(
         self,
-        forecast_demand: Union[np.ndarray, List[float]],
+        forecast_demand: np.ndarray | list[float],
         current_stock: float,
         reorder_point: float,
         lead_time: int,
-        safety_stock: Optional[float] = None,
+        safety_stock: float | None = None,
     ) -> InventoryProjection:
         """
         Project inventory levels over forecast horizon.
@@ -336,12 +337,12 @@ class InventoryService:
             InventoryProjection object
         """
         forecast_demand = np.asarray(forecast_demand, dtype=float)
-        
+
         if safety_stock is None:
             safety_stock = self.calculate_forecast_based_safety_stock(
                 forecast_demand, lead_time
             )
-        
+
         proj_df = self.optimizer.forecast_inventory_levels(
             current_stock=current_stock,
             forecast_demand=forecast_demand,
@@ -349,7 +350,7 @@ class InventoryService:
             lead_time=lead_time,
             safety_stock=safety_stock,
         )
-        
+
         self._last_projection = InventoryProjection(
             periods=proj_df['Period'].values,
             forecast_demand=proj_df['Forecast_Demand'].values,
@@ -359,16 +360,16 @@ class InventoryService:
             safety_stock=safety_stock,
             lead_time=lead_time,
         )
-        
+
         return self._last_projection
-    
+
     def project_inventory_simple(
         self,
-        forecast_demand: Union[np.ndarray, List[float]],
+        forecast_demand: np.ndarray | list[float],
         current_stock: float,
         lead_time: int = 7,
-        reorder_point: Optional[float] = None,
-        safety_stock: Optional[float] = None,
+        reorder_point: float | None = None,
+        safety_stock: float | None = None,
     ) -> InventoryProjection:
         """
         Simplified inventory projection.
@@ -384,27 +385,27 @@ class InventoryService:
             InventoryProjection
         """
         forecast_demand = np.asarray(forecast_demand, dtype=float)
-        
+
         if safety_stock is None:
             safety_stock = self.calculate_forecast_based_safety_stock(
                 forecast_demand, lead_time
             )
-        
+
         if reorder_point is None:
             avg_demand = float(np.mean(forecast_demand))
             reorder_point = self.calculate_reorder_point(avg_demand, lead_time, safety_stock)
-        
+
         return self.project_inventory(
             forecast_demand, current_stock, reorder_point, lead_time, safety_stock
         )
-    
+
     # ------------------------------------------------------------------
     # Risk Analysis
     # ------------------------------------------------------------------
-    
+
     def calculate_stockout_risk(
         self,
-        demand_data: Union[np.ndarray, List[float]],
+        demand_data: np.ndarray | list[float],
         current_stock: float,
         lead_time: int,
         service_level: float = 0.95,
@@ -423,23 +424,23 @@ class InventoryService:
         """
         optimizer = InventoryOptimization(service_level=service_level)
         stats = optimizer.calculate_demand_statistics(demand_data)
-        
+
         # Demand during lead time ~ Normal(mean * LT, std * sqrt(LT))
         lt_mean = stats['mean_demand'] * lead_time
         lt_std = stats['std_demand'] * np.sqrt(lead_time)
-        
+
         if lt_std == 0:
             return 0.0 if current_stock >= lt_mean else 1.0
-        
+
         # P(Demand during LT > current_stock)
         z = (current_stock - lt_mean) / lt_std
         stockout_prob = 1 - scipy_stats.norm.cdf(z)
-        
+
         return max(0.0, min(1.0, float(stockout_prob)))
-    
+
     def calculate_overstock_risk(
         self,
-        demand_data: Union[np.ndarray, List[float]],
+        demand_data: np.ndarray | list[float],
         current_stock: float,
         holding_cost: float,
         time_horizon: int = 30,
@@ -458,26 +459,26 @@ class InventoryService:
         """
         stats = self.calculate_demand_statistics(demand_data)
         expected_demand = stats['mean_demand'] * time_horizon
-        
+
         if current_stock <= expected_demand:
             return 0.0
-        
+
         excess = current_stock - expected_demand
         return excess * holding_cost * time_horizon
-    
+
     def add_risk_metrics(self, recommendations: InventoryRecommendations) -> InventoryRecommendations:
         """Add stockout and overstock risk to recommendations."""
         # This would require demand data which isn't in the recommendations object
         # Kept for interface completeness
         return recommendations
-    
+
     # ------------------------------------------------------------------
     # Reporting
     # ------------------------------------------------------------------
-    
+
     def generate_report(
         self,
-        recommendations: Optional[InventoryRecommendations] = None,
+        recommendations: InventoryRecommendations | None = None,
     ) -> str:
         """
         Generate human-readable inventory report.
@@ -491,13 +492,13 @@ class InventoryService:
         recs = recommendations or self._last_recommendations
         if recs is None:
             return "No recommendations available."
-        
+
         return self.optimizer.generate_optimization_report(recs.to_dict())
-    
-    def get_last_recommendations(self) -> Optional[InventoryRecommendations]:
+
+    def get_last_recommendations(self) -> InventoryRecommendations | None:
         """Get last generated recommendations."""
         return self._last_recommendations
-    
-    def get_last_projection(self) -> Optional[InventoryProjection]:
+
+    def get_last_projection(self) -> InventoryProjection | None:
         """Get last generated projection."""
         return self._last_projection

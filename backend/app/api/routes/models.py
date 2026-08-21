@@ -1,27 +1,18 @@
 """
 Model comparison and registry endpoints.
 """
-from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+
+from fastapi import APIRouter, Depends, Form, HTTPException
 
 from backend.app.schemas.model import (
-    ModelMetrics,
+    BestModelResponse,
     ModelComparisonRequest,
     ModelComparisonResponse,
-    BestModelResponse,
+    ModelMetrics,
+    ModelRegistryDetailResponse,
     ModelRegistryRequest,
     ModelRegistryResponse,
-    ModelRegistryDetailResponse,
 )
-from backend.app.schemas.common import SuccessResponse, ErrorResponse
-from backend.app.dependencies import (
-    get_comparison_service,
-    get_model_registry,
-)
-from src.services.model_comparison_service import ModelComparisonService
-from src.services.model_registry import ModelRegistry, ModelMetadata
-from backend.app.core.config import get_settings
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -35,7 +26,7 @@ router = APIRouter(prefix="/models", tags=["models"])
 )
 async def compare_models(
     request: ModelComparisonRequest,
-    y_true: List[float] = Form(...),
+    y_true: list[float] = Form(...),
     comparison_service = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_comparison_service"]).get_comparison_service()),
 ):
     """
@@ -46,19 +37,18 @@ async def compare_models(
     - **metric**: Metric to sort by (RMSE, MAE, MAPE)
     """
     try:
-        import json
         predictions_str = Form(...)
         # In practice, you'd pass predictions as JSON
         # For now, we'll expect a JSON string
         pass
-        
+
         # This endpoint needs y_true and predictions_dict
         # For a proper implementation, we'd accept multipart with JSON
         raise HTTPException(
             status_code=501,
             detail={"code": "NOT_IMPLEMENTED", "message": "This endpoint requires multipart with JSON. Use /compare/json endpoint."}
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Comparison failed: {str(e)}"})
 
@@ -69,8 +59,8 @@ async def compare_models(
     summary="Compare models with JSON payload",
 )
 async def compare_models_json(
-    y_true: List[float],
-    predictions: Dict[str, List[float]],
+    y_true: list[float],
+    predictions: dict[str, list[float]],
     metric: str = "RMSE",
     comparison_service = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_comparison_service"]).get_comparison_service()),
 ):
@@ -83,9 +73,9 @@ async def compare_models_json(
     """
     try:
         comparison_service = __import__("backend.app.dependencies", fromlist=["get_comparison_service"]).get_comparison_service()
-        
+
         result = comparison_service.compare_models(y_true, predictions, metric)
-        
+
         return ModelComparisonResponse(
             models=[m.to_dict() for m in result.metrics_table.to_dict('records')],
             best_model=result.best_model,
@@ -93,7 +83,7 @@ async def compare_models_json(
             improvement_pct=result.improvement_pct,
             metric_used=result.metric_used,
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Comparison failed: {str(e)}"})
 
@@ -104,8 +94,8 @@ async def compare_models_json(
     summary="Evaluate a single model",
 )
 async def evaluate_model(
-    y_true: List[float],
-    y_pred: List[float],
+    y_true: list[float],
+    y_pred: list[float],
     model_name: str = "Model",
     comparison_service = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_comparison_service"]).get_comparison_service()),
 ):
@@ -114,11 +104,11 @@ async def evaluate_model(
     """
     try:
         comparison_service = __import__("backend.app.dependencies", fromlist=["get_comparison_service"]).get_comparison_service()
-        
+
         metrics = comparison_service.evaluate_model(y_true, y_pred, model_name)
-        
+
         return metrics
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"Evaluation failed: {str(e)}"})
 
@@ -174,7 +164,7 @@ async def register_model(
     """
     try:
         model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
-        
+
         metadata = model_registry.register(
             name=request.name,
             model_type=request.model_type,
@@ -188,9 +178,9 @@ async def register_model(
             tags=request.tags,
             overwrite=request.overwrite,
         )
-        
+
         return ModelRegistryDetailResponse(**metadata.to_dict())
-        
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail={"code": "MODEL_EXISTS", "message": str(e)})
     except Exception as e:
@@ -203,7 +193,7 @@ async def register_model(
     summary="List all registered models",
 )
 async def list_models(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     model_registry = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()),
 ):
     """
@@ -211,7 +201,7 @@ async def list_models(
     """
     model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
     models = model_registry.list(model_type=model_type)
-    
+
     return ModelRegistryResponse(
         models=[m.to_dict() for m in models],
         total=len(models),
@@ -232,10 +222,10 @@ async def get_model(
     """
     model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
     metadata = model_registry.get(model_name)
-    
+
     if metadata is None:
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"Model '{model_name}' not found"})
-    
+
     return ModelRegistryDetailResponse(**metadata.to_dict())
 
 
@@ -251,12 +241,12 @@ async def remove_model(
     Remove a model from the registry.
     """
     model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
-    
+
     success = model_registry.remove(model_name)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"Model '{model_name}' not found"})
-    
+
     return {"success": True, "message": f"Model '{model_name}' removed"}
 
 
@@ -265,7 +255,7 @@ async def remove_model(
     summary="Get latest registered model",
 )
 async def get_latest_model(
-    model_type: Optional[str] = None,
+    model_type: str | None = None,
     model_registry = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()),
 ):
     """
@@ -273,10 +263,10 @@ async def get_latest_model(
     """
     model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
     latest = model_registry.get_latest(model_type)
-    
+
     if latest is None:
         raise HTTPException(status_code=404, detail={"code": "NO_MODELS", "message": "No models registered"})
-    
+
     return ModelRegistryDetailResponse(**latest.to_dict())
 
 
@@ -286,19 +276,19 @@ async def get_latest_model(
 )
 async def update_model_metrics(
     model_name: str,
-    metrics: Dict[str, float],
+    metrics: dict[str, float],
     model_registry = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()),
 ):
     """
     Update metrics for a registered model.
     """
     model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
-    
+
     success = model_registry.update_metrics(model_name, metrics)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"Model '{model_name}' not found"})
-    
+
     return {"success": True, "message": f"Metrics updated for '{model_name}'"}
 
 
@@ -308,17 +298,17 @@ async def update_model_metrics(
 )
 async def add_model_tags(
     model_name: str,
-    tags: List[str],
+    tags: list[str],
     model_registry = Depends(lambda: __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()),
 ):
     """
     Add tags to a registered model.
     """
     model_registry = __import__("backend.app.dependencies", fromlist=["get_model_registry"]).get_model_registry()
-    
+
     success = model_registry.add_tags(model_name, tags)
-    
+
     if not success:
         raise HTTPException(status_code=404, detail={"code": "MODEL_NOT_FOUND", "message": f"Model '{model_name}' not found"})
-    
+
     return {"success": True, "message": f"Tags added to '{model_name}'"}
