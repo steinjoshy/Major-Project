@@ -1,203 +1,290 @@
 import numpy as np
 import pandas as pd
-from scipy import stats
+from scipy import stats as scipy_stats
 
 
 class InventoryOptimization:
-    """Calculate inventory optimization metrics: Safety Stock and Reorder Point."""
-    
+    """
+    Calculate inventory optimization parameters:
+      - Safety Stock
+      - Reorder Point (ROP)
+      - Economic Order Quantity (EOQ, optional)
+      - Projected inventory levels
+
+    Formulas:
+        Safety Stock  = Z × σ_d × √(Lead Time)
+        Reorder Point = (μ_d × Lead Time) + Safety Stock
+
+    where Z is the service-level Z-score, σ_d is the standard deviation of
+    daily demand, and μ_d is the mean daily demand.
+    """
+
     def __init__(self, service_level=0.95):
         """
-        Initialize inventory optimization.
-        
         Args:
-            service_level: Desired service level (0-1), default 0.95 (95%)
+            service_level: Target service level probability (0–1). Default 0.95.
         """
+        if not 0 < service_level < 1:
+            raise ValueError("service_level must be between 0 and 1 exclusive.")
         self.service_level = service_level
-        self.z_score = stats.norm.ppf(service_level)  # Z-score for service level
-    
+        self.z_score = float(scipy_stats.norm.ppf(service_level))
+
+    # ------------------------------------------------------------------
+    # Demand Statistics
+    # ------------------------------------------------------------------
+
     def calculate_demand_statistics(self, demand_data):
         """
-        Calculate demand statistics needed for inventory optimization.
-        
-        Args:
-            demand_data: Array of historical demand values
-        
+        Calculate descriptive statistics from historical demand.
+
         Returns:
-            Dictionary with demand statistics
+            Dict with mean, std, min, max, coefficient of variation
         """
+        arr = np.asarray(demand_data, dtype=float)
+        arr = arr[np.isfinite(arr) & (arr >= 0)]
+        mean_d = float(np.mean(arr))
+        std_d = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
         return {
-            'mean_demand': np.mean(demand_data),
-            'std_demand': np.std(demand_data),
-            'min_demand': np.min(demand_data),
-            'max_demand': np.max(demand_data),
-            'cv': np.std(demand_data) / np.mean(demand_data)  # Coefficient of variation
+            'mean_demand': mean_d,
+            'std_demand': std_d,
+            'min_demand': float(np.min(arr)),
+            'max_demand': float(np.max(arr)),
+            'cv': std_d / mean_d if mean_d > 0 else 0.0,
+            'n_periods': int(len(arr)),
         }
-    
+
+    # ------------------------------------------------------------------
+    # Core Calculations
+    # ------------------------------------------------------------------
+
     def calculate_safety_stock(self, demand_std, lead_time=1):
         """
-        Calculate Safety Stock.
-        
-        Safety Stock = Z-score * Standard Deviation of Demand * sqrt(Lead Time)
-        
+        Safety Stock = Z-score × σ_demand × √(Lead Time)
+
         Args:
-            demand_std: Standard deviation of demand
-            lead_time: Lead time in days/periods
-        
+            demand_std:  Standard deviation of daily demand
+            lead_time:   Lead time in days
+
         Returns:
-            Safety stock quantity
+            Safety stock quantity (rounded up)
         """
-        safety_stock = self.z_score * demand_std * np.sqrt(lead_time)
-        return safety_stock
-    
+        ss = self.z_score * demand_std * np.sqrt(lead_time)
+        return max(0.0, float(ss))
+
     def calculate_reorder_point(self, avg_demand, lead_time, safety_stock):
         """
-        Calculate Reorder Point.
-        
-        Reorder Point = (Average Demand * Lead Time) + Safety Stock
-        
+        Reorder Point = (Average Daily Demand × Lead Time) + Safety Stock
+
         Args:
-            avg_demand: Average demand per period
-            lead_time: Lead time in periods
-            safety_stock: Calculated safety stock
-        
+            avg_demand:    Mean daily demand
+            lead_time:     Lead time in days
+            safety_stock:  Calculated safety stock
+
         Returns:
             Reorder point quantity
         """
-        reorder_point = (avg_demand * lead_time) + safety_stock
-        return reorder_point
-    
-    def calculate_economic_order_quantity(self, annual_demand, holding_cost, 
-                                         ordering_cost):
+        return float(avg_demand * lead_time + safety_stock)
+
+    def calculate_economic_order_quantity(self, annual_demand, holding_cost,
+                                          ordering_cost):
         """
-        Calculate Economic Order Quantity (EOQ).
-        
-        EOQ = sqrt(2 * D * S / H)
-        where D = annual demand, S = ordering cost, H = holding cost per unit
-        
+        EOQ = √(2 × D × S / H)
+
         Args:
-            annual_demand: Total annual demand
-            holding_cost: Cost to hold one unit per year
-            ordering_cost: Cost per order
-        
+            annual_demand:  Total annual demand (units)
+            holding_cost:   Cost to hold 1 unit for 1 year
+            ordering_cost:  Fixed cost per order
+
         Returns:
             Economic order quantity
         """
-        if holding_cost <= 0 or ordering_cost <= 0:
-            return annual_demand / 12  # Default: monthly ordering
-        
-        eoq = np.sqrt((2 * annual_demand * ordering_cost) / holding_cost)
-        return eoq
-    
-    def generate_inventory_recommendations(self, demand_data, lead_time=1, 
-                                         annual_demand=None, holding_cost=None, 
-                                         ordering_cost=None):
+        if holding_cost <= 0 or ordering_cost <= 0 or annual_demand <= 0:
+            return None
+        return float(np.sqrt(2 * annual_demand * ordering_cost / holding_cost))
+
+    # ------------------------------------------------------------------
+    # Forecast-based Safety Stock
+    # ------------------------------------------------------------------
+
+    def calculate_forecast_based_safety_stock(self, forecast_array, lead_time=1):
         """
-        Generate comprehensive inventory optimization recommendations.
-        
+        Safety Stock derived from forecast variability rather than historical std.
+
+        Uses the standard deviation of the forecast values as a proxy for
+        demand uncertainty over the forecast horizon.
+
         Args:
-            demand_data: Historical demand values
-            lead_time: Lead time in periods
-            annual_demand: Annual demand (for EOQ calculation)
-            holding_cost: Cost to hold one unit per year
-            ordering_cost: Cost per order
-        
+            forecast_array: Array of forecasted demand values
+            lead_time:      Lead time in days
+
         Returns:
-            Dictionary with inventory recommendations
+            Safety stock quantity
         """
-        # Calculate demand statistics
-        stats_dict = self.calculate_demand_statistics(demand_data)
-        
-        # Calculate Safety Stock
-        ss = self.calculate_safety_stock(stats_dict['std_demand'], lead_time)
-        
-        # Calculate Reorder Point
-        rp = self.calculate_reorder_point(stats_dict['mean_demand'], 
-                                         lead_time, ss)
-        
+        fc = np.asarray(forecast_array, dtype=float)
+        fc_std = float(np.std(fc, ddof=1)) if len(fc) > 1 else 0.0
+        return self.calculate_safety_stock(fc_std, lead_time)
+
+    # ------------------------------------------------------------------
+    # Recommendations
+    # ------------------------------------------------------------------
+
+    def generate_inventory_recommendations(self, demand_data, lead_time=7,
+                                           forecast_data=None,
+                                           annual_demand=None,
+                                           holding_cost=None,
+                                           ordering_cost=None):
+        """
+        Generate comprehensive inventory recommendations.
+
+        Args:
+            demand_data:    Historical demand array
+            lead_time:      Lead time in days
+            forecast_data:  Forecast array (used for forecast-based SS if provided)
+            annual_demand:  For EOQ calculation
+            holding_cost:   For EOQ calculation
+            ordering_cost:  For EOQ calculation
+
+        Returns:
+            Dict with all inventory parameters
+        """
+        ds = self.calculate_demand_statistics(demand_data)
+
+        # Prefer forecast-based safety stock if forecast is available
+        if forecast_data is not None and len(forecast_data) > 1:
+            ss = self.calculate_forecast_based_safety_stock(forecast_data, lead_time)
+            ss_basis = 'forecast variability'
+        else:
+            ss = self.calculate_safety_stock(ds['std_demand'], lead_time)
+            ss_basis = 'historical demand variability'
+
+        rop = self.calculate_reorder_point(ds['mean_demand'], lead_time, ss)
+
         recommendations = {
-            'average_daily_demand': stats_dict['mean_demand'],
-            'demand_std_dev': stats_dict['std_demand'],
-            'lead_time': lead_time,
-            'service_level': self.service_level * 100,
-            'z_score': self.z_score,
-            'safety_stock': round(ss, 2),
-            'reorder_point': round(rp, 2),
-            'min_stock_recommended': round(rp, 2),
-            'max_stock_recommended': round(rp + ss, 2)
+            'average_daily_demand': round(ds['mean_demand'], 2),
+            'demand_std_dev': round(ds['std_demand'], 2),
+            'lead_time_days': lead_time,
+            'service_level_pct': round(self.service_level * 100, 1),
+            'z_score': round(self.z_score, 4),
+            'safety_stock': round(ss, 1),
+            'reorder_point': round(rop, 1),
+            'safety_stock_basis': ss_basis,
+            'demand_during_lead_time': round(ds['mean_demand'] * lead_time, 1),
         }
-        
-        # Add EOQ if costs provided
-        if annual_demand and holding_cost and ordering_cost:
+
+        # EOQ (optional)
+        if all(v is not None and v > 0
+               for v in [annual_demand, holding_cost, ordering_cost]):
             eoq = self.calculate_economic_order_quantity(
                 annual_demand, holding_cost, ordering_cost
             )
-            recommendations['economic_order_quantity'] = round(eoq, 2)
-        
+            if eoq:
+                recommendations['economic_order_quantity'] = round(eoq, 1)
+
         return recommendations
-    
-    def forecast_inventory_levels(self, current_stock, forecast_demand, 
-                                 reorder_point, lead_time=1):
+
+    # ------------------------------------------------------------------
+    # Inventory Projection
+    # ------------------------------------------------------------------
+
+    def forecast_inventory_levels(self, current_stock, forecast_demand,
+                                  reorder_point, lead_time=7,
+                                  safety_stock=None):
         """
-        Forecast future inventory levels based on demand forecast.
-        
+        Simulate projected inventory levels over the forecast horizon.
+
         Args:
-            current_stock: Current inventory level
-            forecast_demand: Forecasted demand values
-            reorder_point: Calculated reorder point
-            lead_time: Lead time for orders
-        
+            current_stock:    Starting inventory level (units)
+            forecast_demand:  Forecasted daily demand array
+            reorder_point:    When to trigger a replenishment order
+            lead_time:        Days until a placed order arrives
+            safety_stock:     Used to size replenishment order (default: 30-day avg demand)
+
         Returns:
-            DataFrame with inventory forecast
+            DataFrame: Period, Forecast_Demand, Inventory_Level, Order_Placed
         """
+        forecast_demand = np.asarray(forecast_demand, dtype=float)
+        avg_demand = float(np.mean(forecast_demand)) if len(forecast_demand) > 0 else 1.0
+        order_qty = max(avg_demand * 30, reorder_point * 2)  # sensible order quantity
+
         inventory_levels = []
-        current_level = current_stock
         orders_placed = []
-        
+        level = float(current_stock)
+        pending_orders = {}  # {arrival_day: qty}
+
         for i, demand in enumerate(forecast_demand):
+            # Receive any pending orders
+            if i in pending_orders:
+                level += pending_orders[i]
+
             # Check if reorder needed
             order_placed = False
-            if current_level <= reorder_point:
-                # Place order (arrives after lead_time)
+            if level <= reorder_point:
+                arrival_day = i + lead_time
+                pending_orders[arrival_day] = pending_orders.get(arrival_day, 0) + order_qty
                 order_placed = True
-                current_level += np.mean(forecast_demand) * 30  # Order 30 days worth
-            
-            # Update inventory
-            current_level -= demand
-            
-            inventory_levels.append(current_level)
+
+            # Consume demand (floor at 0 — no negative stock in simulation)
+            level = max(0.0, level - demand)
+
+            inventory_levels.append(round(level, 1))
             orders_placed.append(order_placed)
-        
-        forecast_df = pd.DataFrame({
+
+        return pd.DataFrame({
             'Period': range(len(forecast_demand)),
-            'Forecast_Demand': forecast_demand,
+            'Forecast_Demand': np.round(forecast_demand, 1),
             'Inventory_Level': inventory_levels,
-            'Order_Placed': orders_placed
+            'Order_Placed': orders_placed,
         })
-        
-        return forecast_df
-    
+
+    # ------------------------------------------------------------------
+    # Report
+    # ------------------------------------------------------------------
+
     def generate_optimization_report(self, recommendations):
-        """Generate readable inventory optimization report."""
-        report = f"""
-        === INVENTORY OPTIMIZATION REPORT ===
-        
-        Service Level: {recommendations['service_level']:.1f}%
-        Average Daily Demand: {recommendations['average_daily_demand']:.2f} units
-        Demand Std Dev: {recommendations['demand_std_dev']:.2f} units
-        Lead Time: {recommendations['lead_time']} days
-        
-        RECOMMENDED INVENTORY LEVELS:
-        - Safety Stock: {recommendations['safety_stock']} units
-        - Reorder Point: {recommendations['reorder_point']} units
-        - Minimum Stock: {recommendations['min_stock_recommended']} units
-        - Maximum Stock: {recommendations['max_stock_recommended']} units
-        """
-        
-        if 'economic_order_quantity' in recommendations:
-            report += f"\n- Economic Order Quantity (EOQ): {recommendations['economic_order_quantity']} units"
-        
-        return report
+        """Generate a human-readable inventory optimization report."""
+        r = recommendations
+        lines = [
+            "=" * 50,
+            " INVENTORY OPTIMIZATION REPORT",
+            "=" * 50,
+            "",
+            f"Service Level Target : {r['service_level_pct']:.1f}%",
+            f"Z-Score (normal dist): {r['z_score']:.4f}",
+            f"Average Daily Demand : {r['average_daily_demand']:.2f} units",
+            f"Demand Std Deviation : {r['demand_std_dev']:.2f} units",
+            f"Lead Time            : {r['lead_time_days']} days",
+            "",
+            "FORMULAS USED",
+            "-" * 40,
+            "Safety Stock  = Z × σ_demand × √(Lead Time)",
+            "             = {z:.4f} × {std:.2f} × √{lt}".format(
+                z=r['z_score'], std=r['demand_std_dev'], lt=r['lead_time_days']
+            ),
+            f"             = {r['safety_stock']:.1f} units  [{r.get('safety_stock_basis','')}]",
+            "",
+            "Reorder Point = (Avg Demand × Lead Time) + Safety Stock",
+            "             = ({avg:.2f} × {lt}) + {ss:.1f}".format(
+                avg=r['average_daily_demand'],
+                lt=r['lead_time_days'],
+                ss=r['safety_stock']
+            ),
+            f"             = {r['reorder_point']:.1f} units",
+            "",
+            "RECOMMENDATIONS",
+            "-" * 40,
+            f"Safety Stock  : {r['safety_stock']:.1f} units",
+            f"Reorder Point : {r['reorder_point']:.1f} units",
+        ]
+
+        if 'economic_order_quantity' in r:
+            lines += [
+                "",
+                "EOQ = √(2 × D × S / H)",
+                f"Economic Order Quantity : {r['economic_order_quantity']:.1f} units",
+            ]
+
+        lines += ["", "=" * 50]
+        return "\n".join(lines)
 
 
 if __name__ == "__main__":
