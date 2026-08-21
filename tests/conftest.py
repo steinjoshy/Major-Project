@@ -84,9 +84,9 @@ def trained_lstm_for_forecast(sample_data_clean, seq_length):
     forecaster.train(X, y, verbose=0)
     return forecaster, preprocessor, df_clean
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def pipeline_data():
-    """Full pipeline data fixture for integration tests."""
+    """Full pipeline data fixture for integration tests (function-scoped for isolation)."""
     preprocessor = DataPreprocessor()
     df = pd.read_csv(ROOT / "data" / "sample_data" / "sales_data.csv")
     df_clean = preprocessor.clean_data(df, 'Date', 'Sales')
@@ -116,3 +116,9 @@ def pipeline_data():
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
 warnings.filterwarnings("ignore", category=UserWarning, module="keras")
+
+@pytest.fixture(scope="session")
+def service():
+    """Create IngestionService instance for testing."""
+    from src.services.ingestion_service import IngestionService
+    return IngestionService(use_duckdb=False, min_rows_lstm=50)

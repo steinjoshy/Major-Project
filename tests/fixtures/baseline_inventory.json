@@ -5,190 +5,190 @@
     "lead_time_days": 7,
     "service_level_pct": 95.0,
     "z_score": 1.6449,
-    "safety_stock": 58.2,
-    "reorder_point": 1052.8,
+    "safety_stock": 70.2,
+    "reorder_point": 1064.8,
     "safety_stock_basis": "forecast variability",
     "demand_during_lead_time": 994.6
   },
   "projection": [
     {
       "Period": 0,
-      "Forecast_Demand": 121.4,
-      "Inventory_Level": 878.6,
+      "Forecast_Demand": 156.1,
+      "Inventory_Level": 843.9,
       "Order_Placed": true
     },
     {
       "Period": 1,
-      "Forecast_Demand": 133.7,
-      "Inventory_Level": 744.9,
+      "Forecast_Demand": 141.2,
+      "Inventory_Level": 702.7,
       "Order_Placed": true
     },
     {
       "Period": 2,
-      "Forecast_Demand": 141.3,
-      "Inventory_Level": 603.6,
+      "Forecast_Demand": 141.4,
+      "Inventory_Level": 561.3,
       "Order_Placed": true
     },
     {
       "Period": 3,
-      "Forecast_Demand": 141.9,
-      "Inventory_Level": 461.7,
+      "Forecast_Demand": 173.7,
+      "Inventory_Level": 387.6,
       "Order_Placed": true
     },
     {
       "Period": 4,
-      "Forecast_Demand": 128.8,
-      "Inventory_Level": 332.9,
+      "Forecast_Demand": 142.7,
+      "Inventory_Level": 244.9,
       "Order_Placed": true
     },
     {
       "Period": 5,
-      "Forecast_Demand": 137.6,
-      "Inventory_Level": 195.3,
+      "Forecast_Demand": 140.4,
+      "Inventory_Level": 104.5,
       "Order_Placed": true
     },
     {
       "Period": 6,
-      "Forecast_Demand": 160.7,
-      "Inventory_Level": 34.6,
+      "Forecast_Demand": 130.8,
+      "Inventory_Level": 0.0,
       "Order_Placed": true
     },
     {
       "Period": 7,
-      "Forecast_Demand": 133.9,
-      "Inventory_Level": 4083.3,
+      "Forecast_Demand": 138.8,
+      "Inventory_Level": 4072.6,
       "Order_Placed": false
     },
     {
       "Period": 8,
-      "Forecast_Demand": 144.3,
-      "Inventory_Level": 8121.7,
+      "Forecast_Demand": 118.2,
+      "Inventory_Level": 8165.8,
       "Order_Placed": false
     },
     {
       "Period": 9,
-      "Forecast_Demand": 163.5,
-      "Inventory_Level": 12141.0,
+      "Forecast_Demand": 149.5,
+      "Inventory_Level": 12227.6,
       "Order_Placed": false
     },
     {
       "Period": 10,
-      "Forecast_Demand": 125.2,
-      "Inventory_Level": 16198.4,
+      "Forecast_Demand": 160.0,
+      "Inventory_Level": 16279.0,
       "Order_Placed": false
     },
     {
       "Period": 11,
-      "Forecast_Demand": 124.0,
-      "Inventory_Level": 20257.1,
+      "Forecast_Demand": 160.1,
+      "Inventory_Level": 20330.2,
       "Order_Placed": false
     },
     {
       "Period": 12,
-      "Forecast_Demand": 151.6,
-      "Inventory_Level": 24288.2,
+      "Forecast_Demand": 132.1,
+      "Inventory_Level": 24409.5,
       "Order_Placed": false
     },
     {
       "Period": 13,
-      "Forecast_Demand": 141.0,
-      "Inventory_Level": 28329.9,
+      "Forecast_Demand": 109.5,
+      "Inventory_Level": 28511.4,
       "Order_Placed": false
     },
     {
       "Period": 14,
-      "Forecast_Demand": 148.0,
-      "Inventory_Level": 28181.9,
+      "Forecast_Demand": 146.9,
+      "Inventory_Level": 28364.5,
       "Order_Placed": false
     },
     {
       "Period": 15,
-      "Forecast_Demand": 151.5,
-      "Inventory_Level": 28030.4,
+      "Forecast_Demand": 160.8,
+      "Inventory_Level": 28203.6,
       "Order_Placed": false
     },
     {
       "Period": 16,
-      "Forecast_Demand": 127.7,
-      "Inventory_Level": 27902.7,
+      "Forecast_Demand": 119.3,
+      "Inventory_Level": 28084.3,
       "Order_Placed": false
     },
     {
       "Period": 17,
-      "Forecast_Demand": 144.0,
-      "Inventory_Level": 27758.7,
+      "Forecast_Demand": 136.8,
+      "Inventory_Level": 27947.6,
       "Order_Placed": false
     },
     {
       "Period": 18,
-      "Forecast_Demand": 116.0,
-      "Inventory_Level": 27642.6,
+      "Forecast_Demand": 147.2,
+      "Inventory_Level": 27800.4,
       "Order_Placed": false
     },
     {
       "Period": 19,
-      "Forecast_Demand": 140.4,
-      "Inventory_Level": 27502.2,
+      "Forecast_Demand": 130.1,
+      "Inventory_Level": 27670.3,
       "Order_Placed": false
     },
     {
       "Period": 20,
-      "Forecast_Demand": 154.5,
-      "Inventory_Level": 27347.7,
+      "Forecast_Demand": 117.5,
+      "Inventory_Level": 27552.8,
       "Order_Placed": false
     },
     {
       "Period": 21,
-      "Forecast_Demand": 126.2,
-      "Inventory_Level": 27221.5,
+      "Forecast_Demand": 131.5,
+      "Inventory_Level": 27421.2,
       "Order_Placed": false
     },
     {
       "Period": 22,
-      "Forecast_Demand": 138.9,
-      "Inventory_Level": 27082.6,
+      "Forecast_Demand": 134.0,
+      "Inventory_Level": 27287.2,
       "Order_Placed": false
     },
     {
       "Period": 23,
-      "Forecast_Demand": 138.4,
-      "Inventory_Level": 26944.2,
+      "Forecast_Demand": 115.3,
+      "Inventory_Level": 27172.0,
       "Order_Placed": false
     },
     {
       "Period": 24,
-      "Forecast_Demand": 126.0,
-      "Inventory_Level": 26818.2,
+      "Forecast_Demand": 157.3,
+      "Inventory_Level": 27014.7,
       "Order_Placed": false
     },
     {
       "Period": 25,
-      "Forecast_Demand": 127.9,
-      "Inventory_Level": 26690.4,
+      "Forecast_Demand": 164.2,
+      "Inventory_Level": 26850.5,
       "Order_Placed": false
     },
     {
       "Period": 26,
-      "Forecast_Demand": 155.3,
-      "Inventory_Level": 26535.0,
+      "Forecast_Demand": 142.5,
+      "Inventory_Level": 26708.0,
       "Order_Placed": false
     },
     {
       "Period": 27,
-      "Forecast_Demand": 155.6,
-      "Inventory_Level": 26379.4,
+      "Forecast_Demand": 152.4,
+      "Inventory_Level": 26555.6,
       "Order_Placed": false
     },
     {
       "Period": 28,
-      "Forecast_Demand": 120.9,
-      "Inventory_Level": 26258.5,
+      "Forecast_Demand": 121.1,
+      "Inventory_Level": 26434.5,
       "Order_Placed": false
     },
     {
       "Period": 29,
-      "Forecast_Demand": 162.4,
-      "Inventory_Level": 26096.1,
+      "Forecast_Demand": 140.1,
+      "Inventory_Level": 26294.4,
       "Order_Placed": false
     }
   ]
