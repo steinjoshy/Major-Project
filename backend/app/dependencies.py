@@ -1,14 +1,19 @@
 """
 API dependencies for dependency injection.
 """
-from fastapi import File, HTTPException, UploadFile
+from fastapi import Depends, File, HTTPException, UploadFile
+from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.core.config import get_settings
+from backend.app.db import get_db
 from src.services.forecasting_service import ForecastingService
 from src.services.ingestion_service import IngestionService
 from src.services.inventory_service import InventoryService
 from src.services.model_comparison_service import ModelComparisonService
 from src.services.model_registry import ModelRegistry
+
+from backend.app.core.config import Settings
 
 # Service instances (singleton pattern for development)
 _ingestion_service: IngestionService | None = None
@@ -95,3 +100,16 @@ class CommonQueryParams:
     ):
         self.page = max(1, page)
         self.page_size = min(max(1, page_size), 100)
+
+
+async def get_db_session() -> AsyncSession:
+    """Get database session."""
+    async for session in get_db():
+        yield session
+
+
+def get_optional_db_session() -> Optional[AsyncSession]:
+    """Get database session (returns None if not configured)."""
+    async for session in get_db():
+        return session
+    return None
