@@ -1703,6 +1703,7 @@ def _page_train():
     arima_tuple = _parse_arima_order()
     lstm_epochs  = st.session_state.lstm_epochs
     lstm_batch   = st.session_state.lstm_batch
+    lstm_status_t = 'Trained' if st.session_state.models_trained else 'Not Trained'
 
     # ── Training Config Summary ───────────────────────────────────────────────
     _sec('Training Configuration')
