@@ -122,7 +122,18 @@ class LSTMForecaster:
     )
 
     if X_val is not None and y_val is not None:
-        fit_kwargs['validation_data'] = (X_val, y_val)
+        fit_kwargs = {
+            "epochs": self.epochs,
+            "batch_size": self.batch_size,
+            "callbacks": [
+                EarlyStopping(
+                    monitor="loss",
+                    patience=8,
+                    restore_best_weights=True
+                )
+            ],
+            "verbose": verbose
+        }
 
     self.history = self.model.fit(
         X_train,
