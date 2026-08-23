@@ -130,7 +130,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
 /* ─── Sidebar Section Label ─────────────────────────────────────────────── */
 .sb-sec {
     font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px;
-    text-transform: uppercase; color: #334155;
+    text-transform: uppercase; color: #94a3b8;
     padding: 14px 4px 5px 4px;
     display: block;
 }
@@ -176,7 +176,7 @@ section[data-testid="stSidebar"] [data-baseweb="radio"] label {
     transition: color 0.14s, background 0.14s !important;
 }
 section[data-testid="stSidebar"] [data-baseweb="radio"] label:hover {
-    color: #cbd5e1 !important;
+    color: #ffffff !important;
     background: rgba(255,255,255,0.05) !important;
 }
 /* Selected */
