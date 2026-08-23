@@ -210,19 +210,30 @@ class DataPreprocessor:
 
         # Chronological split FIRST (before scaling)
         split_idx = int(len(data) * (1 - test_size))
+
         train_data = data[:split_idx]
-        test_data = data[split_idx:]
+        
 
         # Fit scaler ONLY on training data
         scaler = MinMaxScaler()
-        train_scaled = scaler.fit_transform(train_data)
-        test_scaled = scaler.transform(test_data)
+        scaler.fit(train_data)
+
+        #Scale the comple dataset using only the training data scaler
+        data_scaled = scaler.transform(data)
 
         # Create sequences from each partition
-        X_train, y_train = self._create_sequences(train_scaled, seq_length)
-        X_test, y_test = self._create_sequences(test_scaled, seq_length)
+        X,y = self._create_sequences(data_scaled, seq_length)
+        # The first test prediction starts after training portion.
+        # We keep the previous `seq_length` values as historical context.
+        sequence_split = split_idx - seq_length
 
-        # Store scaler for inverse transform
+        X_train = X[:sequence_split]
+        y_train = y[:sequence_split]
+
+        X_test = X[sequence_split:]
+        y_test = y[sequence_split:]
+        
+        # Store scaler for inverse transform 
         self.scaler = scaler
         self.train_size = split_idx
 

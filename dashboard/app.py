@@ -1807,6 +1807,18 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         X_tr, X_te, y_tr, y_te, lstm_scaler = preprocessor.prepare_lstm_data(
             df, sc, seq_length, test_size=0.2
         )
+        #Ensure LSTM inputs are 3D: (samples, sequence_length, features)
+        X_tr=np.asarray(X_tr, dtype=np.float32)
+        X_te=np.asarray(X_te, dtype=np.float32)
+
+        if X_tr.ndim == 2:
+            X_tr = X_tr.reshape((X_tr.shape[0], X_tr.shape[1], 1))
+        if X_te.ndim == 2:
+            X_te = X_te.reshape((X_te.shape[0], X_te.shape[1], 1))
+
+        st.write("LSTM Training Shape:", X_tr.shape)
+        st.write("LSTM Testing Shape:", X_te.shape)
+        
         lstm_test_start_idx = preprocessor.train_size + seq_length  # First test date index
 
         status_box.info('Training LSTM model...')
@@ -1814,6 +1826,11 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
         lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
         lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
+        st.write("Debug")
+        st.write("X_tr shape:", X_tr.shape)
+        st.write("X_te shape:", X_te.shape)
+        st.write("y_tr shape:", y_tr.shape)
+        st.write("y_te shape:", y_te.shape)
 
         status_box.info('Evaluating LSTM...')
         prog.progress(45)
