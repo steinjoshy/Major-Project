@@ -142,50 +142,64 @@ section[data-testid="stSidebar"] hr {
     margin: 10px 0 !important;
 }
 
-/* ─── Sidebar Nav Radio ─────────────────────────────────────────────────── */
+/* ─── Sidebar Navigation ──────────────────────────────────────────────── */
+
 section[data-testid="stSidebar"] [data-testid="stRadio"] {
     margin: 0 !important;
 }
+
 section[data-testid="stSidebar"] [data-testid="stRadio"] > label {
     display: none !important;
 }
+
 section[data-testid="stSidebar"] [data-testid="stRadio"] > div {
-    gap: 1px !important; flex-direction: column !important;
+    gap: 2px !important;
+    flex-direction: column !important;
 }
-/* Each radio item */
+
+/* Navigation item */
 section[data-testid="stSidebar"] [data-baseweb="radio"] {
     width: 100% !important;
-    border-radius: 6px !important;
-    transition: background 0.14s ease !important;
+    min-height: 34px !important;
+    border-radius: 7px !important;
+    background: transparent !important;
 }
-/* Hide the circle */
+
+/* Hide radio indicator */
 section[data-testid="stSidebar"] [data-baseweb="radio"] > div:first-child {
     display: none !important;
-    width: 0 !important; height: 0 !important;
 }
-/* Label */
-section[data-testid="stSidebar"] [data-baseweb="radio"] label {
-    cursor: pointer !important;
-    padding: 8px 10px !important;
-    width: 100% !important;
-    display: block !important;
-    color: #cbd5e1 !important;
+
+/* Force navigation text */
+section[data-testid="stSidebar"] [data-baseweb="radio"] label,
+section[data-testid="stSidebar"] [data-baseweb="radio"] label p,
+section[data-testid="stSidebar"] [data-baseweb="radio"] span {
+    color: #e2e8f0 !important;
     font-size: 13px !important;
     font-weight: 500 !important;
-    border-radius: 6px !important;
-    transition: color 0.14s, background 0.14s !important;
 }
-section[data-testid="stSidebar"] [data-baseweb="radio"] label:hover {
+
+/* Hover */
+section[data-testid="stSidebar"] [data-baseweb="radio"]:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+
+section[data-testid="stSidebar"] [data-baseweb="radio"]:hover label,
+section[data-testid="stSidebar"] [data-baseweb="radio"]:hover label p,
+section[data-testid="stSidebar"] [data-baseweb="radio"]:hover span {
     color: #ffffff !important;
-    background: rgba(255,255,255,0.05) !important;
 }
+
 /* Selected */
 section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] {
-    background: rgba(30,64,175,0.18) !important;
+    background: rgba(59, 130, 246, 0.22) !important;
 }
-section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label {
-    color: #93c5fd !important;
-    font-weight: 600 !important;
+
+section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label,
+section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label p,
+section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] span {
+    color: #bfdbfe !important;
+    font-weight: 700 !important;
 }
 
 /* ─── Sidebar Number Inputs ─────────────────────────────────────────────── */
