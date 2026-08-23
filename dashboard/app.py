@@ -122,7 +122,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
     letter-spacing: -0.2px;
 }
 .sb-brand-sub {
-    font-size: 10px; color: #475569;
+    font-size: 10px; color: #94a3b8;
     margin: 6px 0 0 35px;
     letter-spacing: 0.3px;
 }
@@ -215,7 +215,7 @@ section[data-testid="stSidebar"] button {
 }
 .sb-status-item {
     display: flex; align-items: center; gap: 8px;
-    font-size: 11px; color: #475569;
+    font-size: 11px; color: #94a3b8;
     padding: 2px 0;
 }
 .sb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
