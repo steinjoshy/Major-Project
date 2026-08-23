@@ -17,7 +17,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-# ── Path Setup ────────────────────────────────────────────────────────────────
+#── Path Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT))
 
@@ -34,9 +34,9 @@ try:
 except ImportError:
     DUCKDB_AVAILABLE = False
 
-# ══════════════════════════════════════════════════════════════════════════════
+#══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
-# ══════════════════════════════════════════════════════════════════════════════
+#══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="AI Demand Forecasting",
     page_icon="◈",
