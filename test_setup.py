@@ -27,7 +27,7 @@ except ImportError as e:
 
 try:
     import statsmodels
-    print(f'[OK] Statsmodels installed')
+    print('[OK] Statsmodels installed')
 except ImportError as e:
     print(f'[ERROR] Statsmodels: {e}')
 
@@ -39,25 +39,25 @@ except ImportError as e:
 
 try:
     import plotly
-    print(f'[OK] Plotly installed')
+    print('[OK] Plotly installed')
 except ImportError as e:
     print(f'[ERROR] Plotly: {e}')
 
 try:
     import matplotlib
-    print(f'[OK] Matplotlib installed')
+    print('[OK] Matplotlib installed')
 except ImportError as e:
     print(f'[ERROR] Matplotlib: {e}')
 
 try:
     import seaborn
-    print(f'[OK] Seaborn installed')
+    print('[OK] Seaborn installed')
 except ImportError as e:
     print(f'[ERROR] Seaborn: {e}')
 
 try:
     import sklearn
-    print(f'[OK] Scikit-learn installed')
+    print('[OK] Scikit-learn installed')
 except ImportError as e:
     print(f'[ERROR] Scikit-learn: {e}')
 

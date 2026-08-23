@@ -49,15 +49,22 @@ The dashboard will start at `http://localhost:8501`
 
 ## Tested Versions
 
+These versions are known to work together (from `requirements.txt`):
+
 ```
-Python 3.12.x
-TensorFlow 2.16.2 (with Keras 3.15.0)
+Python 3.12.10
+TensorFlow 2.16.2
 NumPy 1.26.4
-Pandas 3.0.3
-Scikit-learn 1.9.0
-XGBoost 3.3.0
-Streamlit 1.60.0
+Pandas 2.2.3
+Scikit-learn 1.5.2
+XGBoost 2.1.1
+Streamlit 1.38.0
 SciPy 1.13.1
+Statsmodels 0.14.4
+Plotly 5.24.1
+Matplotlib 3.9.2
+Seaborn 0.13.2
+DuckDB 1.1.3
 ```
 
 ---

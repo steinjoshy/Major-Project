@@ -1,0 +1,36 @@
+# Backend dependencies for FastAPI API
+# These are in addition to the main requirements.txt
+
+# FastAPI
+fastapi==0.110.1
+uvicorn[standard]==0.29.0
+
+# Pydantic
+pydantic==2.7.1
+pydantic-settings==2.3.3
+python-multipart==0.0.9
+
+# Database
+sqlalchemy[asyncio]==2.0.30
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Redis (for future Celery)
+redis==5.0.1
+
+# Additional utilities
+python-dotenv==1.0.1
+httpx==0.27.0
+
+# Development
+pytest==8.2.0
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+httpx==0.27.0
+
+# Type checking
+mypy==1.10.0
+
+# Linting
+ruff==0.4.8

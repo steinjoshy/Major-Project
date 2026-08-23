@@ -276,7 +276,7 @@ class InventoryOptimization:
             f"Reorder Point : {r['reorder_point']:.1f} units",
         ]
 
-        if 'economic_order_quantity' in r:
+        if r.get('economic_order_quantity') is not None:
             lines += [
                 "",
                 "EOQ = √(2 × D × S / H)",

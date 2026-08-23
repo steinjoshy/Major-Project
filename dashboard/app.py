@@ -6,27 +6,27 @@ Pages: Dashboard | Data | EDA | Train Models | Model Comparison |
        Forecast | Inventory | Reports | Settings
 """
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-import sys
-import os
 import io
+import os
+import sys
 import tempfile
 from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
 
 # ── Path Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT))
 
-from src.preprocessing import DataPreprocessor
 from src.eda import ExploratoryAnalysis
-from src.models.lstm_model import LSTMForecaster
-from src.models.arima_xgboost import HybridArimaXGBoost
-from src.models.model_comparison import ModelComparison
 from src.inventory.optimization import InventoryOptimization
+from src.models.arima_xgboost import HybridArimaXGBoost
+from src.models.lstm_model import LSTMForecaster
+from src.models.model_comparison import ModelComparison
+from src.preprocessing import DataPreprocessor
 
 try:
     import duckdb
@@ -37,87 +37,6 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="AI Demand Forecasting",
-    page_icon="?",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-st.markdown("""
-<style>
-:root {
-    --bg: #f4f7fb;
-    --surface: #ffffff;
-    --border: #e5eaf2;
-    --text: #0f172a;
-    --muted: #64748b;
-    --primary: #2563eb;
-    --primary-2: #1d4ed8;
-    --success: #059669;
-    --success-bg: #ecfdf5;
-    --violet: #7c3aed;
-    --violet-bg: #f5f3ff;
-    --warning: #b45309;
-    --warning-bg: #fff7ed;
-    --radius: 16px;
-    --shadow: 0 1px 3px rgba(15,23,42,.08), 0 8px 24px rgba(15,23,42,.04);
-}
-.stApp { background: var(--bg); }
-.block-container { padding: 1.1rem 1.35rem 1.5rem 1.35rem !important; max-width: 100% !important; }
-* { font-family: Inter, Segoe UI, system-ui, -apple-system, sans-serif !important; }
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0b1630 0%, #111c36 100%) !important;
-    border-right: 1px solid rgba(255,255,255,.06) !important;
-}
-section[data-testid="stSidebar"] > div { padding: 0 !important; }
-section[data-testid="stSidebar"] [data-testid="stSidebarContent"] { padding: 0 14px 18px 14px !important; }
-.sb-brand { padding: 18px 4px 14px 4px; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
-.sb-brand-row { display:flex; align-items:center; gap:10px; }
-.sb-brand-mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, #2563eb, #22c55e); }
-.sb-brand-title { font-size: 13px; font-weight: 800; color: #e2e8f0; }
-.sb-brand-sub { font-size: 10px; color: #94a3b8; margin: 4px 0 0 40px; }
-.sb-sec { display:block; font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #94a3b8; padding: 12px 4px 6px; }
-section[data-testid="stSidebar"] hr { border:none !important; border-top:1px solid rgba(255,255,255,.08) !important; margin: 10px 0 !important; }
-section[data-testid="stSidebar"] [data-testid="stRadio"] label { color: #cbd5e1 !important; font-size: 13px !important; font-weight: 500 !important; }
-section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label { color: #93c5fd !important; font-weight: 700 !important; }
-section[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
-section[data-testid="stSidebar"] [data-testid="stTextInput"] input { background: rgba(255,255,255,.04) !important; color: #e2e8f0 !important; border: 1px solid rgba(255,255,255,.10) !important; }
-.sb-status { margin-top: 8px; padding: 10px 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; }
-.sb-status-item { display:flex; align-items:center; gap:8px; font-size: 11px; color: #cbd5e1; padding: 3px 0; }
-.sb-dot { width: 6px; height: 6px; border-radius: 50%; }
-.sb-dot-on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.12); }
-.sb-dot-off { background: #475569; }
-.sb-status-val { color: #ffffff; font-weight: 700; }
-.page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom: 16px; }
-.page-title { font-size: 26px; font-weight: 800; letter-spacing: -0.8px; color: var(--text); margin: 0; }
-.page-sub { font-size: 12.5px; color: var(--muted); margin: 3px 0 0 0; }
-.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
-.panel-title { font-size: 13px; font-weight: 800; color: var(--text); margin: 0 0 14px 0; }
-.section-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #64748b; margin: 0 0 10px 0; }
-.metric-card { background: linear-gradient(180deg, #fff 0%, #fbfdff 100%); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; box-shadow: var(--shadow); }
-.metric-label { font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: #64748b; margin: 0 0 8px 0; }
-.metric-value { font-size: 22px; font-weight: 800; letter-spacing: -0.7px; color: var(--text); margin: 0; line-height: 1.1; }
-.metric-sub { font-size: 11px; color: #94a3b8; margin: 4px 0 0 0; }
-.metric-icon { width: 36px; height: 36px; border-radius: 10px; display:grid; place-items:center; font-size: 18px; float:right; margin-left: 12px; }
-.icon-blue { background: #eff6ff; color: #2563eb; }
-.icon-green { background: #ecfdf5; color: #059669; }
-.icon-violet { background: #f5f3ff; color: #7c3aed; }
-.icon-orange { background: #fff7ed; color: #ea580c; }
-.badge { display:inline-flex; align-items:center; gap:5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
-.badge-ok { background: var(--success-bg); color: var(--success); }
-.badge-warn { background: var(--warning-bg); color: var(--warning); }
-.badge-gray { background: #f1f5f9; color: #475569; }
-.badge-violet { background: var(--violet-bg); color: var(--violet); }
-[data-testid="stPlotlyChart"] { border: 1px solid var(--border); border-radius: 14px; overflow:hidden; box-shadow: var(--shadow); background: white; }
-.stButton > button { border-radius: 12px !important; font-weight: 700 !important; border: 1px solid var(--border) !important; }
-.stButton > button[kind="primary"] { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-2) 100%) !important; color: #fff !important; border: none !important; box-shadow: 0 8px 18px rgba(37,99,235,.18) !important; }
-[data-testid="stDataFrame"] { border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow); }
-[data-testid="stExpander"] { border-radius: 14px !important; border: 1px solid var(--border) !important; }
-.footer { text-align:center; color:#94a3b8; font-size: 11px; padding: 18px 0 4px; border-top: 1px solid var(--border); margin-top: 28px; }
-@media (max-width: 1200px) { .page-head { display:block; } }
-</style>
-""", unsafe_allow_html=True)
 st.set_page_config(
     page_title="AI Demand Forecasting",
     page_icon="◈",
@@ -304,6 +223,14 @@ section[data-testid="stSidebar"] button {
 .sb-dot-off { background: #334155; }
 .sb-dot-warn { background: #d97706; }
 .sb-status-val { color: #cbd5e1; font-weight: 600; }
+
+/* ─── Sidebar Z-Score Box ─────────────────────────────────────────────────── */
+.sb-z-box {
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace !important;
+    font-size: 13px; font-weight: 700; color: #93c5fd;
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 5px; padding: 4px 8px; display: inline-block;
+}
 
 /* ─── Page Header ───────────────────────────────────────────────────────── */
 .ph { padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 22px; }
@@ -1567,7 +1494,7 @@ def _page_data():
 
             except Exception as exc:
                 prog.empty()
-                st.error(f'Failed to load dataset.')
+                st.error('Failed to load dataset.')
                 with st.expander('Technical details'):
                     st.code(str(exc))
                 return
@@ -1776,6 +1703,8 @@ def _page_train():
     arima_tuple = _parse_arima_order()
     lstm_epochs  = st.session_state.lstm_epochs
     lstm_batch   = st.session_state.lstm_batch
+    lstm_status_t = 'Trained' if st.session_state.models_trained else 'Not Trained'
+    hyb_status_t = 'Trained' if st.session_state.models_trained else 'Not Trained'
 
     # ── Training Config Summary ───────────────────────────────────────────────
     _sec('Training Configuration')
@@ -1799,11 +1728,6 @@ def _page_train():
     # ── Model Cards ───────────────────────────────────────────────────────────
     _sec('Models')
     mc1, mc2 = st.columns(2)
-
-    lstm_status   = 'badge-ok'   if st.session_state.models_trained else 'badge-neutral'
-    lstm_status_t = 'Trained'    if st.session_state.models_trained else 'Not trained'
-    hyb_status    = 'badge-ok'   if st.session_state.models_trained else 'badge-neutral'
-    hyb_status_t  = 'Trained'    if st.session_state.models_trained else 'Not trained'
 
     with mc1:
         st.markdown(f"""
@@ -1877,11 +1801,13 @@ Step 4 — Forecast = ARIMA + XGBoost correction
     try:
         preprocessor = st.session_state.preprocessor
 
-        # LSTM data prep
+        # LSTM data prep (NO LEAKAGE - split first, then scale)
         status_box.info('Preparing LSTM sequences...')
         prog.progress(5)
-        X, y = preprocessor.prepare_lstm_data(df, sc, seq_length)
-        X_tr, X_te, y_tr, y_te = preprocessor.train_test_split_data(X, y, test_size=0.2)
+        X_tr, X_te, y_tr, y_te, lstm_scaler = preprocessor.prepare_lstm_data(
+            df, sc, seq_length, test_size=0.2
+        )
+        lstm_test_start_idx = preprocessor.train_size + seq_length  # First test date index
 
         status_box.info('Training LSTM model...')
         prog.progress(15)
@@ -1892,13 +1818,16 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         status_box.info('Evaluating LSTM...')
         prog.progress(45)
         lstm_preds_scaled = lstm.predict(X_te)
-        lstm_preds = preprocessor.inverse_scale(lstm_preds_scaled).flatten()
-        y_test_actual = preprocessor.inverse_scale(y_te.reshape(-1, 1)).flatten()
+        lstm_preds = lstm_scaler.inverse_transform(lstm_preds_scaled).flatten()
+        y_test_actual = lstm_scaler.inverse_transform(y_te.reshape(-1, 1)).flatten()
 
-        # Hybrid data prep
+        # Hybrid data prep - ALIGN test window with LSTM (Bug B3 fix)
         status_box.info('Fitting ARIMA...')
         prog.progress(55)
-        train_series, test_series, _ = preprocessor.prepare_hybrid_data(df, sc, test_size=0.2)
+        values = df[sc].values.astype(float)
+        # Hybrid train ends where LSTM test begins (aligned evaluation window)
+        train_series = values[:lstm_test_start_idx]
+        test_series = values[lstm_test_start_idx:]
         hybrid = HybridArimaXGBoost(arima_order=arima_tuple)
         hybrid.fit(train_series)
 
@@ -1906,11 +1835,15 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         prog.progress(70)
         hybrid_preds = hybrid.evaluate_on_test(train_series, test_series)
 
-        # Align predictions length
+        # Lengths should now match naturally (no min_len truncation needed)
+        # But guard against small off-by-one
         min_len = min(len(lstm_preds), len(hybrid_preds), len(y_test_actual))
-        lstm_preds   = lstm_preds[:min_len]
-        hybrid_preds = hybrid_preds[:min_len]
-        y_test_actual = y_test_actual[:min_len]
+        if min_len < len(lstm_preds):
+            lstm_preds = lstm_preds[:min_len]
+        if min_len < len(hybrid_preds):
+            hybrid_preds = hybrid_preds[:min_len]
+        if min_len < len(y_test_actual):
+            y_test_actual = y_test_actual[:min_len]
 
         # Comparison
         status_box.info('Comparing models...')
@@ -2109,6 +2042,8 @@ def _page_forecast():
 
             status.info('Preparing LSTM input sequence...')
             prog.progress(10)
+            # Use the scaler that was fit on TRAINING DATA ONLY (no leakage)
+            # The preprocessor.scaler is now the training-fitted scaler
             scaled_all = preprocessor.scale_data(df[sc].values.reshape(-1, 1), fit=False)
             last_seq   = scaled_all[-seq_length:].flatten()
 
@@ -2118,11 +2053,9 @@ def _page_forecast():
 
             status.info('Generating Hybrid ARIMA+XGBoost forecast...')
             prog.progress(60)
-            # Re-fit Hybrid on full dataset for future forecast
-            arima_tuple = _parse_arima_order()
-            hybrid_full = HybridArimaXGBoost(arima_order=arima_tuple)
-            hybrid_full.fit(df[sc].values.astype(float))
-            hybrid_fc = hybrid_full.forecast_future(steps=forecast_steps)
+            # Use the ALREADY-TRAINED hybrid model from evaluation (no silent refit)
+            # This ensures the forecast model matches the evaluated model (Bug B4 fix)
+            hybrid_fc = hybrid_obj.forecast_future(steps=forecast_steps)
 
             prog.progress(90)
             # Future dates
@@ -2401,8 +2334,11 @@ def _page_inventory():
     with dl_col1:
         _download_csv(recs_df, 'Inventory Parameters', 'inventory_parameters.csv', 'dl_inv_params')
     with dl_col2:
-        if 'inv_proj' in dir():
+        # inv_proj is defined in the try block above; use a flag
+        try:
             _download_csv(inv_proj, 'Projection Data', 'inventory_projection.csv', 'dl_inv_proj')
+        except NameError:
+            pass  # inv_proj not available (projection failed)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE: REPORTS

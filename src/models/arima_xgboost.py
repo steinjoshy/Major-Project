@@ -1,11 +1,7 @@
 import numpy as np
-import pandas as pd
-import warnings
+from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor
-from sklearn.preprocessing import StandardScaler
-
-warnings.filterwarnings('ignore')
 
 _FALLBACK_ARIMA_ORDERS = [(1, 1, 1), (0, 1, 1), (1, 1, 0), (0, 1, 0), (1, 0, 0)]
 
@@ -66,6 +62,41 @@ class HybridArimaXGBoost:
             y.append(series[i])
         return np.array(X), np.array(y)
 
+    def _generate_residual_corrections(self, steps, initial_residuals):
+        """
+        Generate XGBoost residual corrections for multiple steps using
+        rolling autoregressive approach.
+
+        Args:
+            steps: Number of forecast steps
+            initial_residuals: Array of in-sample residuals from training
+
+        Returns:
+            np.array of corrections of length `steps`
+        """
+        corrections = np.zeros(steps)
+        if not self.xgb_trained:
+            return corrections
+
+        # Start with last `residual_lags` residuals from training
+        residual_window = initial_residuals[-self.residual_lags:].copy()
+
+        for i in range(steps):
+            if len(residual_window) == self.residual_lags:
+                try:
+                    corr = self.xgb_model.predict(
+                        self.residual_scaler.transform(residual_window.reshape(1, -1))
+                    )[0]
+                    corrections[i] = corr
+                    # Roll window: drop oldest, append predicted correction
+                    residual_window = np.append(residual_window[1:], corr)
+                except Exception:
+                    corrections[i] = 0.0
+            else:
+                corrections[i] = 0.0
+
+        return corrections
+
     # ------------------------------------------------------------------
     # Training
     # ------------------------------------------------------------------
@@ -89,7 +120,6 @@ class HybridArimaXGBoost:
         self.arima_fitted = True
 
         # Step 2 — Residuals = actual − ARIMA in-sample fitted values
-        # resid may be a pandas Series or numpy array depending on statsmodels version
         _resid = self.arima_model.resid
         self._residuals = _resid.values if hasattr(_resid, 'values') else np.asarray(_resid)
 
@@ -110,7 +140,7 @@ class HybridArimaXGBoost:
 
         The model must have been fitted on train_data via fit() first.
         ARIMA forecasts test_len steps ahead from the end of training.
-        XGBoost correction uses the last `residual_lags` residuals from training.
+        XGBoost correction uses rolling autoregressive approach on residuals.
 
         Args:
             train_data: Training demand array (same as passed to fit())
@@ -128,19 +158,8 @@ class HybridArimaXGBoost:
         _fc = self.arima_model.get_forecast(steps=test_len).predicted_mean
         arima_forecast = _fc.values if hasattr(_fc, 'values') else np.asarray(_fc)
 
-        # XGBoost correction for each step
-        xgb_corrections = np.zeros(test_len)
-        if self.xgb_trained:
-            recent_residuals = self._residuals[-self.residual_lags:]
-            if len(recent_residuals) == self.residual_lags:
-                try:
-                    xgb_corrections[0] = self.xgb_model.predict(
-                        self.residual_scaler.transform(recent_residuals.reshape(1, -1))
-                    )[0]
-                    # For subsequent steps, use rolling approach if available
-                    # (single correction applied to step 0; zeros for rest is conservative)
-                except Exception:
-                    pass
+        # XGBoost correction for all steps using rolling autoregressive approach
+        xgb_corrections = self._generate_residual_corrections(test_len, self._residuals)
 
         hybrid_preds = arima_forecast + xgb_corrections
         return hybrid_preds
@@ -163,18 +182,10 @@ class HybridArimaXGBoost:
         _ff = self.arima_model.get_forecast(steps=steps).predicted_mean
         arima_forecast = _ff.values if hasattr(_ff, 'values') else np.asarray(_ff)
 
-        xgb_correction = np.zeros(steps)
-        if self.xgb_trained:
-            recent_residuals = self._residuals[-self.residual_lags:]
-            if len(recent_residuals) == self.residual_lags:
-                try:
-                    xgb_correction[0] = self.xgb_model.predict(
-                        self.residual_scaler.transform(recent_residuals.reshape(1, -1))
-                    )[0]
-                except Exception:
-                    pass
+        # XGBoost correction for all steps using rolling autoregressive approach
+        xgb_corrections = self._generate_residual_corrections(steps, self._residuals)
 
-        return arima_forecast + xgb_correction
+        return arima_forecast + xgb_corrections
 
     # ------------------------------------------------------------------
     # Legacy API (kept for backward compat)
