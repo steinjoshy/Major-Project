@@ -55,37 +55,82 @@ class LSTMForecaster:
     # ------------------------------------------------------------------
 
     def train(self, X_train, y_train, X_val=None, y_val=None, verbose=0):
-        """
-        Train the LSTM model.
+        """ Train the LSTM model Automatically ensures input data has the required shape: (samples, sequence_length, features)"""
 
-        Args:
-            X_train: (n_samples, seq_length, 1) scaled training sequences
-            y_train: (n_samples,) scaled training targets
-            X_val, y_val: Optional validation data
-            verbose: Keras verbosity (0=silent)
+        # Convert to NumPy arrays
+        X_train = np.asarray(X_train, dtype=np.float32)
+        y_train = np.asarray(y_train, dtype=np.float32)
 
-        Returns:
-            Keras History object
-        """
-        if self.model is None:
-            self.build_model((X_train.shape[1], X_train.shape[2]))
+        # --------------------------------------------------
+        # FIX: Ensure LSTM input is 3-dimensional
+        # --------------------------------------------------
+        if X_train.ndim == 2:
+           X_train = X_train.reshape(
+               X_train.shape[0],
+               X_train.shape[1],
+               1
+            )
 
-        callbacks = [
-            EarlyStopping(monitor='val_loss' if X_val is not None else 'loss',
-                          patience=8, restore_best_weights=True)
-        ]
+        if X_train.ndim != 3:
+           raise ValueError(
+               f"LSTM training data must be 3D "
+               f"(samples, sequence_length, features). "
+               f"Received: {X_train.shape}"
+            )
 
-        fit_kwargs = dict(
-            epochs=self.epochs,
-            batch_size=self.batch_size,
-            callbacks=callbacks,
-            verbose=verbose
+        # Validation data
+        if X_val is not None:
+            X_val = np.asarray(X_val, dtype=np.float32)
+
+            if X_val.ndim == 2:
+                X_val = X_val.reshape(
+                    X_val.shape[0],
+                    X_val.shape[1],
+                    1
+                )
+
+        if X_val.ndim != 3:
+            raise ValueError(
+                f"LSTM validation data must be 3D. "
+                f"Received: {X_val.shape}"
+            )
+
+    if y_val is not None:
+        y_val = np.asarray(y_val, dtype=np.float32)
+
+    # --------------------------------------------------
+    # Build model using corrected shape
+    # --------------------------------------------------
+    if self.model is None:
+        self.build_model(
+            (X_train.shape[1], X_train.shape[2])
         )
-        if X_val is not None and y_val is not None:
-            fit_kwargs['validation_data'] = (X_val, y_val)
 
-        self.history = self.model.fit(X_train, y_train, **fit_kwargs)
-        return self.history
+    callbacks = [
+        EarlyStopping(
+            monitor='val_loss' if X_val is not None else 'loss',
+            patience=8,
+            restore_best_weights=True
+        )
+    ]
+
+    fit_kwargs = dict(
+        epochs=self.epochs,
+        batch_size=self.batch_size,
+        callbacks=callbacks,
+        verbose=verbose
+    )
+
+    if X_val is not None and y_val is not None:
+        fit_kwargs['validation_data'] = (X_val, y_val)
+
+    self.history = self.model.fit(
+        X_train,
+        y_train,
+        **fit_kwargs
+    )
+
+    return self.history
 
     # ------------------------------------------------------------------
     # Prediction
