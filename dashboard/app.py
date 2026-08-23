@@ -169,7 +169,7 @@ section[data-testid="stSidebar"] [data-baseweb="radio"] label {
     padding: 8px 10px !important;
     width: 100% !important;
     display: block !important;
-    color: #64748b !important;
+    color: #cbd5e1 !important;
     font-size: 13px !important;
     font-weight: 500 !important;
     border-radius: 6px !important;
