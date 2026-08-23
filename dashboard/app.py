@@ -1826,11 +1826,21 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
         lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
         lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
-        st.write("Debug")
-        st.write("X_tr shape:", X_tr.shape)
-        st.write("X_te shape:", X_te.shape)
-        st.write("y_tr shape:", y_tr.shape)
-        st.write("y_te shape:", y_te.shape)
+        st.write("=== LSTM Debug===")
+        st.write("X_tr:",X_tr.shape, X_tr.shape,X_tr.ndim)
+        st.write("X_te",X_te.shape, X_te.shape,X_te.ndim)
+        st.write("y_tr:",y_tr.shape, y_tr.shape, y_tr.ndim)
+        st.write("y_te:",y_te.shape, y_te.shape, y_te.ndim)
+
+        if X_te.ndim != 3:
+            raise ValueError(f"X_te is wrong before LSTM training: {X_te.shape}")
+
+        if X_te.shape[1:] != (seq_length, 1):
+            raise ValueError(f"X_te has wrong sequence shape: {X_te.shape}. "
+                             f"Expected (*,{seq_length}, 1)"
+                         )
+
+        lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
 
         status_box.info('Evaluating LSTM...')
         prog.progress(45)
