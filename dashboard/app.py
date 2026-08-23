@@ -1814,6 +1814,11 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
         lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
         lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
+        st.write("Debug")
+        st.write("X_tr shape:", X_tr.shape)
+        st.write("X_te shape:", X_te.shape)
+        st.write("y_tr shape:", y_tr.shape)
+        st.write("y_te shape:", y_te.shape)
 
         status_box.info('Evaluating LSTM...')
         prog.progress(45)
