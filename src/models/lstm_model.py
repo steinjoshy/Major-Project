@@ -141,6 +141,70 @@ class LSTMForecaster:
         **fit_kwargs
     )
 
+=======
+    """
+    Train the LSTM model.
+    """
+
+    # Ensure LSTM input is always 3D:
+    # (samples, sequence_length, features)
+    X_train = np.asarray(X_train, dtype=np.float32)
+
+    if X_train.ndim == 2:
+        X_train = X_train.reshape(
+            X_train.shape[0],
+            X_train.shape[1],
+            1
+        )
+
+    if X_train.ndim != 3:
+        raise ValueError(
+            f"LSTM expects 3D input (samples, seq_length, features), "
+            f"but received shape {X_train.shape}"
+        )
+
+    if X_val is not None:
+        X_val = np.asarray(X_val, dtype=np.float32)
+
+        if X_val.ndim == 2:
+            X_val = X_val.reshape(
+                X_val.shape[0],
+                X_val.shape[1],
+                1
+            )
+
+    y_train = np.asarray(y_train, dtype=np.float32)
+
+    if y_val is not None:
+        y_val = np.asarray(y_val, dtype=np.float32)
+
+    if self.model is None:
+        self.build_model((X_train.shape[1], X_train.shape[2]))
+
+    callbacks = [
+        EarlyStopping(
+            monitor='val_loss' if X_val is not None else 'loss',
+            patience=8,
+            restore_best_weights=True
+        )
+    ]
+
+    fit_kwargs = dict(
+        epochs=self.epochs,
+        batch_size=self.batch_size,
+        callbacks=callbacks,
+        verbose=verbose
+    )
+
+    if X_val is not None and y_val is not None:
+        fit_kwargs['validation_data'] = (X_val, y_val)
+
+    self.history = self.model.fit(
+        X_train,
+        y_train,
+        **fit_kwargs
+    )
+ main
     return self.history
 
     # ------------------------------------------------------------------
