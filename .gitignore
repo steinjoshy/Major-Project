@@ -12,3 +12,4 @@ env/
 .pytest_cache/
 *.csv~
 *.tmp
+node_modules/
