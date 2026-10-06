@@ -1275,224 +1275,236 @@ def _page_dashboard():
 
 
 def _page_data():
-    _ph('Data', 'Upload train.csv, test.csv, and sample_submission.csv for demand forecasting')
+    _ph('Data', 'Upload, validate, and preprocess your demand dataset')
 
-    # Workflow Step Indicator
-    steps = [
-        ("1", "Upload Train Data", st.session_state.train_df is not None),
-        ("2", "Upload Test Data", st.session_state.test_df is not None),
-        ("3", "Upload Sample Submission", st.session_state.sample_submission is not None),
-        ("4", "Validate & Preprocess", st.session_state.data is not None),
-    ]
-    
-    step_html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">'
-    for i, (num, label, done) in enumerate(steps):
-        color = '#059669' if done else '#94a3b8'
-        bg = '#d1fae5' if done else '#f1f5f9'
-        step_html += (
-            '<div style="flex:1;text-align:center;">'
-            f'<div style="width:28px;height:28px;border-radius:50%;background:{bg};color:{color};'
-            'display:flex;align-items:center;justify-content:center;margin:0 auto 6px;'
-            'font-weight:700;font-size:12px;">{num}</div>'
-            f'<div style="font-size:11px;color:{color};font-weight:600;">{label}</div>'
-            '</div>'
-        )
-        if i < len(steps) - 1:
-            step_html += '<div style="flex:1;border-top:2px solid #e2e8f0;margin-top:14px;"></div>'
-    step_html += '</div>'
-    st.markdown(step_html, unsafe_allow_html=True)
+    # ── Source Selection ──────────────────────────────────────────────────────
+    _sec('Data Source')
+    src_mode = st.radio('Source mode', ['Upload Files', 'Local Folder Path'],
+                        horizontal=True, label_visibility='collapsed', key='_src_mode')
 
-    # Source Selection
-    _sec('Upload Datasets')
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown('**train.csv** (with units_sold)')
-        train_uploaded = st.file_uploader(
-            'Upload train.csv',
-            type=['csv'],
-            accept_multiple_files=False,
-            help='Training data with target column (units_sold). Approx 150,150 rows.',
-            key='train_uploader',
-            label_visibility='collapsed'
-        )
-        if train_uploaded:
-            try:
-                train_df = pd.read_csv(train_uploaded)
-                st.session_state.train_df = train_df
-                st.success(f'Loaded train.csv: {len(train_df):,} rows, {len(train_df.columns)} cols')
-            except Exception as e:
-                st.error(f'Failed to load train.csv: {e}')
-    
-    with col2:
-        st.markdown('**test.csv** (no units_sold)')
-        test_uploaded = st.file_uploader(
-            'Upload test.csv',
-            type=['csv'],
-            accept_multiple_files=False,
-            help='Test data without target column. Approx 13,860 rows.',
-            key='test_uploader',
-            label_visibility='collapsed'
-        )
-        if test_uploaded:
-            try:
-                test_df = pd.read_csv(test_uploaded)
-                st.session_state.test_df = test_df
-                st.success(f'Loaded test.csv: {len(test_df):,} rows, {len(test_df.columns)} cols')
-            except Exception as e:
-                st.error(f'Failed to load test.csv: {e}')
-    
-    with col3:
-        st.markdown('**sample_submission.csv**')
-        sub_uploaded = st.file_uploader(
-            'Upload sample_submission.csv',
-            type=['csv'],
-            accept_multiple_files=False,
-            help='Submission template with record_ID and units_sold columns.',
-            key='sub_uploader',
-            label_visibility='collapsed'
-        )
-        if sub_uploaded:
-            try:
-                sub_df = pd.read_csv(sub_uploaded)
-                st.session_state.sample_submission = sub_df
-                st.success(f'Loaded sample_submission.csv: {len(sub_df):,} rows')
-            except Exception as e:
-                st.error(f'Failed to load sample_submission.csv: {e}')
+    selected_sources = []
 
-    # Show uploaded data info
-    if st.session_state.train_df is not None or st.session_state.test_df is not None:
+    if src_mode == 'Upload Files':
+        uploaded = st.file_uploader(
+            'Upload CSV file(s)',
+            type=['csv'],
+            accept_multiple_files=True,
+            help='Upload one or more CSV files. Multi-file datasets (e.g., Favorita, M5, Walmart) are supported.',
+            label_visibility='collapsed',
+        )
+        selected_sources = list(uploaded) if uploaded else []
+
+        if selected_sources:
+            _sec('Uploaded Files')
+            for f in selected_sources:
+                size_kb = _src_size(f) / 1024
+                size_str = f'{size_kb:.1f} KB' if size_kb < 1024 else f'{size_kb/1024:.2f} MB'
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;'
+                    f'border-bottom:1px solid #e2e8f0;font-size:13px;">'
+                    f'<span style="color:#1e40af;font-weight:600;">{f.name}</span>'
+                    f'<span style="color:#94a3b8;">{size_str}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+    else:
+        folder_path = st.text_input('Folder path (absolute)', placeholder='/path/to/data/',
+                                    key='_folder_path', label_visibility='collapsed')
+        if folder_path:
+            csv_files = _list_csvs(folder_path)
+            if csv_files:
+                selected_sources = csv_files
+                _sec(f'Found {len(csv_files)} CSV File(s)')
+                for fp in csv_files:
+                    size_kb = _src_size(fp) / 1024
+                    size_str = f'{size_kb:.1f} KB' if size_kb < 1024 else f'{size_kb/1024:.2f} MB'
+                    st.markdown(
+                        f'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #e2e8f0;">'
+                        f'<span style="color:#334155;font-weight:500;">{Path(fp).name}</span>'
+                        f' <span style="color:#94a3b8;">— {size_str}</span></div>',
+                        unsafe_allow_html=True
+                    )
+            elif folder_path:
+                st.warning('No CSV files found in the specified folder.')
+
+    if not selected_sources:
         st.markdown('<br>', unsafe_allow_html=True)
-        _sec('Uploaded Data Summary')
-        
-        if st.session_state.train_df is not None:
-            df = st.session_state.train_df
-            st.markdown('**Train Data**')
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric('Rows', f'{len(df):,}')
-            c2.metric('Columns', len(df.columns))
-            c3.metric('Date Range', f"{df['week'].min()} to {df['week'].max()}" if 'week' in df.columns else 'N/A')
-            c4.metric('StoreSKU Groups', df.groupby(['store_id', 'sku_id']).ngroups if 'store_id' in df.columns and 'sku_id' in df.columns else 'N/A')
-            st.dataframe(df.head(10), use_container_width=True, height=200)
-        
-        if st.session_state.test_df is not None:
-            df = st.session_state.test_df
-            st.markdown('**Test Data**')
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric('Rows', f'{len(df):,}')
-            c2.metric('Columns', len(df.columns))
-            c3.metric('Date Range', f"{df['week'].min()} to {df['week'].max()}" if 'week' in df.columns else 'N/A')
-            c4.metric('StoreSKU Groups', df.groupby(['store_id', 'sku_id']).ngroups if 'store_id' in df.columns and 'sku_id' in df.columns else 'N/A')
-            st.dataframe(df.head(10), use_container_width=True, height=200)
+        st.markdown("""
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:18px 20px;">
+            <p style="font-size:12.5px;font-weight:600;color:#334155;margin:0 0 10px 0;">Supported Dataset Formats</p>
+            <ul style="font-size:12px;color:#64748b;margin:0;padding-left:20px;line-height:2;">
+                <li><b>Single CSV</b> — any file with a date column and a sales/demand column</li>
+                <li><b>Kaggle Favorita</b> — train.csv + items.csv + stores.csv (auto-detected)</li>
+                <li><b>M5 Competition</b> — wide-format sales_train_evaluation.csv (auto-melted)</li>
+                <li><b>Walmart</b> — multi-file store/feature/sales datasets</li>
+                <li><b>Large files &gt;100 MB</b> — DuckDB SQL engine used automatically</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        return
 
-    # Column Mapping
-    if st.session_state.train_df is not None:
-        st.markdown('<br>', unsafe_allow_html=True)
-        _sec('Column Mapping')
-        
-        train_cols = list(st.session_state.train_df.columns)
-        test_cols = list(st.session_state.test_df.columns) if st.session_state.test_df is not None else []
-        
-        # Auto-detect columns
-        date_aliases = ['week', 'date', 'Date', 'timestamp', 'ds', 'period']
-        sales_aliases = ['units_sold', 'sales', 'Sales', 'demand', 'quantity', 'qty']
-        store_aliases = ['store_id', 'store', 'Store', 'storeId']
-        sku_aliases = ['sku_id', 'sku', 'SKU', 'item_id', 'product_id']
-        
-        def auto_detect(cols, aliases):
-            for a in aliases:
-                if a in cols:
-                    return a
-            for a in aliases:
-                for c in cols:
-                    if a.lower() == c.lower():
-                        return c
-            return None
-        
-        auto_date = auto_detect(train_cols, date_aliases)
-        auto_sales = auto_detect(train_cols, sales_aliases)
-        auto_store = auto_detect(train_cols, store_aliases)
-        auto_sku = auto_detect(train_cols, sku_aliases)
-        
-        c1, c2, c3, c4 = st.columns(4)
+    # ── Column Detection ──────────────────────────────────────────────────────
+    primary_src  = selected_sources[0]
+    all_cols     = _read_columns(primary_src)
+    is_wide      = _detect_wide_format(all_cols)
+    auto_dc, auto_sc = _auto_detect_cols(all_cols)
+
+    st.markdown('<br>', unsafe_allow_html=True)
+    _sec('Column Mapping')
+
+    if is_wide:
+        st.info('M5 wide-format detected. Day columns will be melted and aggregated automatically.')
+        date_col  = 'date'
+        sales_col = 'sales'
+        non_day   = [c for c in all_cols if not (c.startswith('d_') and c[2:].isdigit())]
+        c1, c2 = st.columns(2)
         with c1:
-            date_col = st.selectbox('Date/Week column', train_cols, 
-                                     index=train_cols.index(auto_date) if auto_date in train_cols else 0,
-                                     key='_dc')
+            date_col = st.selectbox('Date column', ['(auto-generated)'] + non_day, key='_dc')
+            if date_col == '(auto-generated)':
+                date_col = 'date'
         with c2:
-            sales_col = st.selectbox('Target column (units_sold)', train_cols,
-                                      index=train_cols.index(auto_sales) if auto_sales in train_cols else 0,
-                                      key='_sc')
-        with c3:
-            store_col = st.selectbox('Store ID column', ['(none)'] + train_cols,
-                                      index=(train_cols.index(auto_store) + 1) if auto_store in train_cols else 0,
-                                      key='_storec')
-            if store_col == '(none)':
-                store_col = None
-        with c4:
-            sku_col = st.selectbox('SKU ID column', ['(none)'] + train_cols,
-                                    index=(train_cols.index(auto_sku) + 1) if auto_sku in train_cols else 0,
-                                    key='_skuc')
-            if sku_col == '(none)':
-                sku_col = None
-        
-        st.session_state.selected_date_col = date_col
-        st.session_state.selected_sales_col = sales_col
-        st.session_state.selected_store_col = store_col
-        st.session_state.selected_sku_col = sku_col
+            sales_col = st.selectbox('Demand column', ['(aggregated d_* cols)'] + non_day, key='_sc')
+            if sales_col == '(aggregated d_* cols)':
+                sales_col = 'sales'
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            idx = all_cols.index(auto_dc) if auto_dc in all_cols else 0
+            date_col = st.selectbox('Date column', all_cols, index=idx, key='_dc')
+            if auto_dc:
+                st.caption(f'Auto-detected: {auto_dc}')
+            else:
+                st.caption('Could not auto-detect. Please select manually.')
+        with c2:
+            idx = all_cols.index(auto_sc) if auto_sc in all_cols else 0
+            sales_col = st.selectbox('Demand column', all_cols, index=idx, key='_sc')
+            if auto_sc:
+                st.caption(f'Auto-detected: {auto_sc}')
+            else:
+                st.caption('Could not auto-detect. Please select manually.')
 
-    # Validation Split Configuration
-    if st.session_state.train_df is not None:
-        st.markdown('<br>', unsafe_allow_html=True)
-        _sec('Validation Split (inside train.csv)')
-        st.caption('The test.csv has no ground truth. We create a validation set from the last 20% of train.csv for model evaluation.')
-        
-        test_size = st.slider('Validation split ratio', 0.1, 0.4, st.session_state.test_size, 0.05,
-                               key='val_split',
-                               help='Fraction of train.csv to hold out for validation (chronological split)')
-        st.session_state.test_size = test_size
+    # ── Load & Preprocess ─────────────────────────────────────────────────────
+    sig = _build_sig(src_mode, selected_sources, date_col, sales_col)
+    already_done = (st.session_state.last_processed_sig == sig
+                    and st.session_state.data is not None)
 
-    # Load & Preprocess Button
-    if st.session_state.train_df is not None:
-        st.markdown('<br>', unsafe_allow_html=True)
-        
-        col_btn, col_rst = st.columns([2, 6])
-        with col_btn:
-            load_btn = st.button('Validate & Preprocess Train Data', type='primary', use_container_width=True)
-        with col_rst:
-            if st.button('Reset All', use_container_width=False):
-                for k in ['data', 'train_df', 'test_df', 'sample_submission', 'preprocessor', 
-                          'models_trained', 'predictions', 'selected_date_col', 'selected_sales_col',
-                          'selected_store_col', 'selected_sku_col', 'last_processed_sig',
-                          'forecast_generated', 'forecast_lstm', 'forecast_hybrid',
-                          'forecast_dates', 'test_predictions', 'test_record_ids',
-                          'best_model', 'comparison_df']:
-                    st.session_state[k] = _DEFAULTS.get(k)
-                st.rerun()
+    if already_done:
+        st.success('Dataset already loaded and preprocessed.')
 
-        if load_btn:
-            prog = st.progress(0, text='Preparing training dataset...')
+    col_btn, col_rst = st.columns([2, 6])
+    with col_btn:
+        load_btn = st.button('Load & Preprocess', type='primary', use_container_width=True)
+    with col_rst:
+        if st.button('Reset', use_container_width=False):
+            for k in ['data', 'preprocessor', 'models_trained', 'predictions',
+                      'selected_date_col', 'selected_sales_col', 'last_processed_sig',
+                      'forecast_generated', 'forecast_lstm', 'forecast_hybrid',
+                      'forecast_dates', 'best_model', 'comparison_df']:
+                st.session_state[k] = _DEFAULTS.get(k)
+            st.rerun()
+
+    if not load_btn and already_done:
+        pass
+    elif load_btn or not already_done:
+        if not load_btn and already_done:
+            pass
+        elif load_btn:
+            # ── Actual data loading ───────────────────────────────────────
+            prog = st.progress(0, text='Preparing dataset...')
             try:
                 preprocessor = DataPreprocessor()
-                
-                prog.progress(20, text='Cleaning train data...')
-                df_clean = preprocessor.clean_data(
-                    st.session_state.train_df, 
-                    date_col=st.session_state.selected_date_col,
-                    sales_col=st.session_state.selected_sales_col,
-                    store_col=st.session_state.selected_store_col,
-                    sku_col=st.session_state.selected_sku_col
-                )
-                
+                use_duck = st.session_state.use_duckdb and DUCKDB_AVAILABLE
+
+                if is_wide:
+                    prog.progress(10, text='Melting wide format (M5)...')
+                    dfs = []
+                    for s_src in selected_sources:
+                        if _is_file_obj(s_src):
+                            s_src.seek(0)
+                            df_w = pd.read_csv(s_src, low_memory=False)
+                        else:
+                            df_w = pd.read_csv(s_src, low_memory=False)
+                        day_cols = [c for c in df_w.columns if c.startswith('d_') and c[2:].isdigit()]
+                        if day_cols:
+                            melted = df_w[day_cols].sum(axis=0)
+                            melted.index = range(len(melted))
+                            dfs.append(pd.DataFrame({'date': melted.index, 'sales': melted.values}))
+                    merged_df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+                    date_col = 'date'
+                    sales_col = 'sales'
+
+                elif len(selected_sources) > 1:
+                    prog.progress(10, text='Merging multiple files...')
+                    dfs = []
+                    for s_src in selected_sources:
+                        try:
+                            if _is_file_obj(s_src):
+                                s_src.seek(0)
+                                df_tmp = pd.read_csv(s_src, low_memory=False)
+                            else:
+                                df_tmp = pd.read_csv(s_src, low_memory=False)
+                            if date_col in df_tmp.columns and sales_col in df_tmp.columns:
+                                dfs.append(df_tmp[[date_col, sales_col]])
+                        except Exception:
+                            continue
+                    merged_df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame(columns=[date_col, sales_col])
+
+                else:
+                    prog.progress(10, text='Reading dataset...')
+                    s_src = selected_sources[0]
+                    s_size = _src_size(s_src)
+                    DUCK_THRESHOLD = 80 * 1024 * 1024
+
+                    if use_duck and s_size > DUCK_THRESHOLD:
+                        prog.progress(20, text='Loading via DuckDB...')
+                        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as tmp:
+                            if _is_file_obj(s_src):
+                                s_src.seek(0)
+                                tmp.write(s_src.read())
+                                s_src.seek(0)
+                            else:
+                                with open(str(s_src), 'rb') as ff:
+                                    tmp.write(ff.read())
+                            tmp_path = tmp.name
+                        try:
+                            con = duckdb.connect()
+                            merged_df = con.execute(
+                                f"SELECT {date_col}, SUM(CAST({sales_col} AS DOUBLE)) AS {sales_col} "
+                                f"FROM read_csv_auto('{tmp_path}') "
+                                f"WHERE {sales_col} IS NOT NULL AND CAST({sales_col} AS DOUBLE) >= 0 "
+                                f"GROUP BY {date_col} ORDER BY {date_col}"
+                            ).df()
+                            con.close()
+                        finally:
+                            try:
+                                os.unlink(tmp_path)
+                            except Exception:
+                                pass
+                    elif s_size > DUCK_THRESHOLD:
+                        prog.progress(20, text='Loading large file (chunked)...')
+                        if _is_file_obj(s_src):
+                            s_src.seek(0)
+                            file_bytes = s_src.read()
+                            s_src.seek(0)
+                        else:
+                            with open(str(s_src), 'rb') as ff:
+                                file_bytes = ff.read()
+                        merged_df = _aggregate_chunked(file_bytes, _src_name(s_src), date_col, sales_col)
+                    else:
+                        if _is_file_obj(s_src):
+                            s_src.seek(0)
+                            merged_df = pd.read_csv(s_src, low_memory=False)
+                            s_src.seek(0)
+                        else:
+                            merged_df = pd.read_csv(str(s_src), low_memory=False)
+
+                if merged_df.empty or date_col not in merged_df.columns or sales_col not in merged_df.columns:
+                    st.error('Could not load data. Check that the selected columns exist in the file.')
+                    prog.empty()
+                    return
+
                 prog.progress(50, text='Validating data...')
-                is_valid, msgs = preprocessor.validate_data(
-                    df_clean,
-                    st.session_state.selected_date_col,
-                    st.session_state.selected_sales_col,
-                    st.session_state.selected_store_col,
-                    st.session_state.selected_sku_col
-                )
+                is_valid, msgs = preprocessor.validate_data(merged_df, date_col, sales_col)
                 if not is_valid:
                     prog.empty()
                     st.error('Validation failed. See details below.')
@@ -1501,103 +1513,108 @@ def _page_data():
                     return
                 for w in msgs:
                     st.warning(w)
-                
-                prog.progress(80, text='Finalizing...')
-                st.session_state.data = df_clean
-                st.session_state.preprocessor = preprocessor
-                st.session_state.last_processed_sig = 'train_processed'
+
+                prog.progress(70, text='Cleaning and feature engineering...')
+                df_clean = preprocessor.clean_data(merged_df, date_col, sales_col)
+
+                prog.progress(90, text='Finalizing...')
+                st.session_state.data               = df_clean
+                st.session_state.preprocessor       = preprocessor
+                st.session_state.selected_date_col  = date_col
+                st.session_state.selected_sales_col = sales_col
+                st.session_state.last_processed_sig = sig
                 # Reset downstream
-                st.session_state.models_trained = False
-                st.session_state.predictions = {}
+                st.session_state.models_trained    = False
+                st.session_state.predictions       = {}
                 st.session_state.forecast_generated = False
-                st.session_state.forecast_lstm = None
-                st.session_state.forecast_hybrid = None
-                st.session_state.forecast_dates = None
-                st.session_state.test_predictions = None
-                st.session_state.test_record_ids = None
-                st.session_state.best_model = None
-                st.session_state.comparison_df = None
-                
+                st.session_state.forecast_lstm     = None
+                st.session_state.forecast_hybrid   = None
+                st.session_state.forecast_dates    = None
+                st.session_state.best_model        = None
+                st.session_state.comparison_df     = None
                 prog.progress(100, text='Done.')
                 st.rerun()
-            
+
             except Exception as exc:
                 prog.empty()
-                st.error('Failed to preprocess dataset.')
+                st.error('Failed to load dataset.')
                 with st.expander('Technical details'):
                     st.code(str(exc))
                 return
 
-    # Show Preprocessed Data Info
-    if st.session_state.data is not None:
-        st.markdown('<br>', unsafe_allow_html=True)
-        _sec('Preprocessed Training Data')
-        
-        df = st.session_state.data
-        dc = st.session_state.selected_date_col
-        sc = st.session_state.selected_sales_col
-        store_c = st.session_state.selected_store_col
-        sku_c = st.session_state.selected_sku_col
-        
-        info_col, qual_col = st.columns([1, 1])
-        
-        with info_col:
-            n_rows = len(df)
-            d_min = df[dc].min().strftime('%Y-%m-%d') if dc in df else 'N/A'
-            d_max = df[dc].max().strftime('%Y-%m-%d') if dc in df else 'N/A'
-            avg_d = df[sc].mean() if sc in df else 0
-            total_d = df[sc].sum() if sc in df else 0
-            n_groups = df.groupby([store_c, sku_c]).ngroups if store_c and sku_c and store_c in df and sku_c in df else 1
-            
-            st.markdown(f"""
-            <div class="card">
-            <table class="info-tbl">
-                <tr><td>Records</td><td>{n_rows:,}</td></tr>
-                <tr><td>Date Range</td><td>{d_min} - {d_max}</td></tr>
-                <tr><td>Average Demand</td><td>{avg_d:,.2f} units</td></tr>
-                <tr><td>Total Demand</td><td>{_fmt(total_d)}</td></tr>
-                <tr><td>StoreSKU Groups</td><td>{n_groups}</td></tr>
-                <tr><td>Date Column</td><td>{dc}</td></tr>
-                <tr><td>Target Column</td><td>{sc}</td></tr>
-                <tr><td>Store Column</td><td>{store_c or 'N/A (single series)'}</td></tr>
-                <tr><td>SKU Column</td><td>{sku_c or 'N/A (single series)'}</td></tr>
-            </table>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with qual_col:
-            _sec('Data Quality')
-            missing_pct = df[sc].isna().mean() * 100 if sc in df else 0
-            dup_count = df.duplicated(subset=[dc]).sum() if dc in df else 0
-            neg_count = (df[sc] < 0).sum() if sc in df else 0
-            std_val = df[sc].std() if sc in df else 1
-            n_rows_chk = len(df)
-            
-            qrows = ''
-            qrows += _qrow('Date column parseable',   'pass' if dc in df else 'err')
-            qrows += _qrow('Target column numeric',   'pass' if sc in df else 'err')
-            qrows += _qrow('Missing values',
-                            'pass' if missing_pct == 0 else ('warn' if missing_pct < 5 else 'err'),
-                            f'{missing_pct:.1f}%')
-            qrows += _qrow('Negative demand',
-                            'pass' if neg_count == 0 else 'warn',
-                            f'{int(neg_count)} rows' if neg_count > 0 else '')
-            qrows += _qrow('Demand variance',
-                            'pass' if std_val > 0 else 'err',
-                            'Constant series' if std_val == 0 else '')
-            qrows += _qrow('Minimum row count (100)',
-                            'pass' if n_rows_chk >= 100 else 'warn',
-                            f'{n_rows_chk} rows')
-            
-            st.markdown(f'<div class="card">{qrows}</div>', unsafe_allow_html=True)
-        
-        st.markdown('<br>', unsafe_allow_html=True)
-        _sec('Data Preview')
-        st.dataframe(df.head(50), use_container_width=True, height=220)
+    # ── Show Data Info if loaded ──────────────────────────────────────────────
+    if st.session_state.data is None:
+        return
 
-# ========================================================================
+    df  = st.session_state.data
+    dc  = st.session_state.selected_date_col
+    sc  = st.session_state.selected_sales_col
+
+    st.markdown('<br>', unsafe_allow_html=True)
+
+    info_col, qual_col = st.columns([1, 1])
+
+    with info_col:
+        _sec('Dataset Information')
+        n_rows = len(df)
+        d_min  = df[dc].min().strftime('%Y-%m-%d') if dc in df else 'N/A'
+        d_max  = df[dc].max().strftime('%Y-%m-%d') if dc in df else 'N/A'
+        avg_d  = df[sc].mean() if sc in df else 0
+        total_d = df[sc].sum() if sc in df else 0
+        n_files = len(selected_sources)
+
+        st.markdown(f"""
+        <div class="card">
+        <table class="info-tbl">
+            <tr><td>Records</td><td>{n_rows:,}</td></tr>
+            <tr><td>Date Range</td><td>{d_min} — {d_max}</td></tr>
+            <tr><td>Average Demand</td><td>{avg_d:,.2f} units</td></tr>
+            <tr><td>Total Demand</td><td>{_fmt(total_d)}</td></tr>
+            <tr><td>Date Column</td><td>{dc}</td></tr>
+            <tr><td>Demand Column</td><td>{sc}</td></tr>
+            <tr><td>Files Loaded</td><td>{n_files}</td></tr>
+        </table>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with qual_col:
+        _sec('Data Quality')
+        # Run quality checks on actual data
+        missing_pct = df[sc].isna().mean() * 100 if sc in df else 0
+        dup_count   = df.duplicated(subset=[dc]).sum() if dc in df else 0
+        neg_count   = (df[sc] < 0).sum() if sc in df else 0
+        std_val     = df[sc].std() if sc in df else 1
+        n_rows_chk  = len(df)
+
+        qrows = ''
+        qrows += _qrow('Date column parseable',   'pass' if dc in df else 'err')
+        qrows += _qrow('Demand column numeric',    'pass' if sc in df else 'err')
+        qrows += _qrow('Missing values',
+                        'pass' if missing_pct == 0 else ('warn' if missing_pct < 5 else 'err'),
+                        f'{missing_pct:.1f}%')
+        qrows += _qrow('Duplicate dates',
+                        'pass' if dup_count == 0 else 'warn',
+                        f'{int(dup_count)} found' if dup_count > 0 else '')
+        qrows += _qrow('Negative demand',
+                        'pass' if neg_count == 0 else 'warn',
+                        f'{int(neg_count)} rows' if neg_count > 0 else '')
+        qrows += _qrow('Demand variance',
+                        'pass' if std_val > 0 else 'err',
+                        'Constant series' if std_val == 0 else '')
+        qrows += _qrow('Minimum row count (100)',
+                        'pass' if n_rows_chk >= 100 else 'warn',
+                        f'{n_rows_chk} rows')
+
+        st.markdown(f'<div class="card">{qrows}</div>', unsafe_allow_html=True)
+
+    # ── Preview ───────────────────────────────────────────────────────────────
+    st.markdown('<br>', unsafe_allow_html=True)
+    _sec('Data Preview')
+    st.dataframe(df.head(50), use_container_width=True, height=220)
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE: EDA
-# ========================================================================
+# ══════════════════════════════════════════════════════════════════════════════
 def _page_eda():
     _ph('Exploratory Analysis', 'Understand demand patterns, seasonality, and distribution')
     if _guard_data('EDA'):
@@ -1718,46 +1735,40 @@ def _page_eda():
 # PAGE: TRAIN MODELS
 # ══════════════════════════════════════════════════════════════════════════════
 def _page_train():
-    _ph('Train Models', 'Train LSTM and Hybrid ARIMA+XGBoost on panel data (store_id, sku_id)')
+    _ph('Train Models', 'Train LSTM and Hybrid ARIMA+XGBoost forecasting models')
     if _guard_data('Train Models'):
         return
 
     df = st.session_state.data
     dc = st.session_state.selected_date_col
     sc = st.session_state.selected_sales_col
-    store_c = st.session_state.selected_store_col
-    sku_c = st.session_state.selected_sku_col
     seq_length = st.session_state.seq_length
-    test_size = st.session_state.test_size
     arima_tuple = _parse_arima_order()
     lstm_epochs  = st.session_state.lstm_epochs
     lstm_batch   = st.session_state.lstm_batch
     lstm_status_t = 'Trained' if st.session_state.models_trained else 'Not Trained'
     hyb_status_t = 'Trained' if st.session_state.models_trained else 'Not Trained'
 
-    is_panel = store_c is not None and sku_c is not None and store_c in df.columns and sku_c in df.columns
-
-    # Training Config Summary
+    # ── Training Config Summary ───────────────────────────────────────────────
     _sec('Training Configuration')
     cfg_cols = st.columns(4)
     cfg_cols[0].markdown(_kpi('Records', f'{len(df):,}', 'training data', ''), unsafe_allow_html=True)
     cfg_cols[1].markdown(_kpi('Look-back', f'{seq_length} days', 'LSTM sequence length', ''), unsafe_allow_html=True)
-    cfg_cols[2].markdown(_kpi('Val Split', f'{int((1-test_size)*100)}%', f'{int(test_size*100)}% held for validation', ''), unsafe_allow_html=True)
+    cfg_cols[2].markdown(_kpi('Train Split', '80%', '20% held for test', ''), unsafe_allow_html=True)
     cfg_cols[3].markdown(_kpi('ARIMA Order', f'{arima_tuple}', 'p,d,q — with fallback', ''), unsafe_allow_html=True)
-    if is_panel:
-        n_groups = df.groupby([store_c, sku_c]).ngroups
-        st.caption(f'Panel data: {n_groups} unique (store_id, sku_id) combinations')
 
     st.markdown('<br>', unsafe_allow_html=True)
 
-    # Minimum row check
+    # ── Minimum row check ─────────────────────────────────────────────────────
     MIN_ROWS = seq_length * 2 + 20
     if len(df) < MIN_ROWS:
         st.error(f'Insufficient data for training. Need at least {MIN_ROWS} rows '
-                 f'for look-back={seq_length}. Current: {len(df)} rows.')
+                 f'for look-back={seq_length}. Current: {len(df)} rows.\n\n'
+                 'Recommended action: Reduce the Look-back window in the sidebar, '
+                 'or upload more historical data.')
         return
 
-    # Model Cards
+    # ── Model Cards ───────────────────────────────────────────────────────────
     _sec('Models')
     mc1, mc2 = st.columns(2)
 
@@ -1770,9 +1781,9 @@ def _page_train():
             </div>
             <p class="mc-sub">Deep Learning Time-Series Forecasting</p>
             <div class="mc-arch">
-LSTM({st.session_state.lstm_batch * 2}) -> Dropout(0.2)
-LSTM({st.session_state.lstm_batch}) -> Dropout(0.2)
-Dense(16, ReLU) -> Dense(1)
+LSTM({st.session_state.lstm_batch * 2}) → Dropout(0.2)
+LSTM({st.session_state.lstm_batch}) → Dropout(0.2)
+Dense(16, ReLU) → Dense(1)
             </div>
             <table class="info-tbl">
                 <tr><td>Optimizer</td><td>Adam (lr=0.001)</td></tr>
@@ -1793,23 +1804,23 @@ Dense(16, ReLU) -> Dense(1)
             </div>
             <p class="mc-sub">Statistical + Gradient Boosting Ensemble</p>
             <div class="mc-arch">
-Step 1 - ARIMA{arima_tuple} on training data
-Step 2 - Residuals = Actual - ARIMA fit
-Step 3 - XGBoost on lagged residuals (10 lags)
-Step 4 - Forecast = ARIMA + XGBoost correction
+Step 1 — ARIMA{arima_tuple} on training data
+Step 2 — Residuals = Actual − ARIMA fit
+Step 3 — XGBoost on lagged residuals (10 lags)
+Step 4 — Forecast = ARIMA + XGBoost correction
             </div>
             <table class="info-tbl">
                 <tr><td>ARIMA Order</td><td>{arima_tuple} (with fallback)</td></tr>
                 <tr><td>XGBoost</td><td>n_est=100, lr=0.05, depth=5</td></tr>
                 <tr><td>Residual Lags</td><td>10</td></tr>
-                <tr><td>Train Split</td><td>{int((1-test_size)*100)}% chronological</td></tr>
+                <tr><td>Train Split</td><td>80% chronological</td></tr>
             </table>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown('<br>', unsafe_allow_html=True)
 
-    # Train Button
+    # ── Train Button ──────────────────────────────────────────────────────────
     c1, c2, c3 = st.columns([2, 2, 4])
     with c1:
         train_btn = st.button('Train Both Models', type='primary', use_container_width=True)
@@ -1826,150 +1837,108 @@ Step 4 - Forecast = ARIMA + XGBoost correction
                 st.dataframe(st.session_state.comparison_df, use_container_width=True, hide_index=True)
         return
 
-    # Training
+    # ── Training ─────────────────────────────────────────────────────────────
     prog = st.progress(0)
     status_box = st.empty()
 
     try:
         preprocessor = st.session_state.preprocessor
-        from src.services.forecasting_service import ForecastingService
 
-        if is_panel:
-            # Use panel data training
-            status_box.info('Initializing Forecasting Service for panel data...')
-            prog.progress(5)
+        # LSTM data prep (NO LEAKAGE - split first, then scale)
+        status_box.info('Preparing LSTM sequences...')
+        prog.progress(5)
+        X_tr, X_te, y_tr, y_te, lstm_scaler = preprocessor.prepare_lstm_data(
+            df, sc, seq_length, test_size=0.2
+        )
 
-            service = ForecastingService(
-                seq_length=seq_length,
-                lstm_epochs=lstm_epochs,
-                lstm_batch_size=lstm_batch,
-                arima_order=arima_tuple,
-            )
+        # Ensure LSTM inputs are 3D: (samples, sequence_length, features)
+        X_tr = np.asarray(X_tr, dtype=np.float32)
+        X_te = np.asarray(X_te, dtype=np.float32)
 
-            status_box.info('Training models on panel data (per store/SKU)...')
-            prog.progress(15)
+        if X_tr.ndim == 2:
+            X_tr = X_tr.reshape((X_tr.shape[0], X_tr.shape[1], 1))
+        if X_te.ndim == 2:
+            X_te = X_te.reshape((X_te.shape[0], X_te.shape[1], 1))
 
-            results = service.train_all_models_panel(
-                train_df=df,
-                sales_col=sc,
-                test_size=test_size,
-                store_col=store_c,
-                sku_col=sku_c,
-                date_col=dc,
-                preprocessor=preprocessor,
-            )
+        # The first LSTM test target corresponds to the chronological train/test split point.
+        # Keep the Hybrid test range identical so comparison metrics are valid.
+        lstm_test_start_idx = preprocessor.train_size
 
-            status_box.info('Evaluating models on validation set...')
-            prog.progress(70)
+        status_box.info('Training LSTM model...')
+        prog.progress(15)
+        lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
+        lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
+        lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
 
-            # Get test predictions from service
-            test_preds = service.get_test_predictions()
-            lstm_preds = test_preds.get('LSTM', np.array([]))
-            hybrid_preds = test_preds.get('Hybrid ARIMA+XGBoost', np.array([]))
-            y_test_actual = test_preds.get('y_test', np.array([]))
+        status_box.info('Evaluating LSTM...')
+        prog.progress(45)
+        lstm_preds_scaled = lstm.predict(X_te)
+        lstm_preds = lstm_scaler.inverse_transform(lstm_preds_scaled).flatten()
+        y_test_actual = lstm_scaler.inverse_transform(y_te.reshape(-1, 1)).flatten()
 
-            # Comparison
-            status_box.info('Comparing models...')
-            prog.progress(85)
-            comparator = ModelComparison()
-            comp_df = comparator.compare_models(
-                y_test_actual,
-                {'LSTM': lstm_preds, 'Hybrid ARIMA+XGBoost': hybrid_preds}
-            )
-            best_info = comparator.get_best_model(comp_df, 'RMSE')
+        # Hybrid data prep - ALIGN test window with LSTM (Bug B3 fix)
+        status_box.info('Fitting ARIMA...')
+        prog.progress(55)
+        values = df[sc].values.astype(float)
+        # Hybrid train ends where LSTM test begins (aligned evaluation window)
+        train_series = values[:lstm_test_start_idx]
+        test_series = values[lstm_test_start_idx:]
+        hybrid = HybridArimaXGBoost(arima_order=arima_tuple)
+        hybrid.fit(train_series)
 
-            # Store for later test.csv prediction
-            st.session_state._forecasting_service = service
+        status_box.info('Training XGBoost on residuals...')
+        prog.progress(70)
+        hybrid_preds = hybrid.evaluate_on_test(train_series, test_series)
 
-        else:
-            # Legacy single-series training
-            status_box.info('Preparing LSTM sequences...')
-            prog.progress(5)
-            X_tr, X_te, y_tr, y_te, lstm_scaler = preprocessor.prepare_lstm_data(
-                df, sc, seq_length, test_size=test_size
-            )
+        # Lengths should now match naturally (no min_len truncation needed)
+        # But guard against small off-by-one
+        min_len = min(len(lstm_preds), len(hybrid_preds), len(y_test_actual))
+        if min_len < len(lstm_preds):
+            lstm_preds = lstm_preds[:min_len]
+        if min_len < len(hybrid_preds):
+            hybrid_preds = hybrid_preds[:min_len]
+        if min_len < len(y_test_actual):
+            y_test_actual = y_test_actual[:min_len]
 
-            X_tr = np.asarray(X_tr, dtype=np.float32)
-            X_te = np.asarray(X_te, dtype=np.float32)
+        # Comparison
+        status_box.info('Comparing models...')
+        prog.progress(85)
+        comparator = ModelComparison()
+        comp_df = comparator.compare_models(
+            y_test_actual,
+            {'LSTM': lstm_preds, 'Hybrid ARIMA+XGBoost': hybrid_preds}
+        )
+        best_info = comparator.get_best_model(comp_df, 'RMSE')
 
-            if X_tr.ndim == 2:
-                X_tr = X_tr.reshape((X_tr.shape[0], X_tr.shape[1], 1))
-            if X_te.ndim == 2:
-                X_te = X_te.reshape((X_te.shape[0], X_te.shape[1], 1))
-
-            lstm_test_start_idx = preprocessor.train_size
-
-            status_box.info('Training LSTM model...')
-            prog.progress(15)
-            lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
-            lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
-            lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
-
-            status_box.info('Evaluating LSTM...')
-            prog.progress(45)
-            lstm_preds_scaled = lstm.predict(X_te)
-            lstm_preds = lstm_scaler.inverse_transform(lstm_preds_scaled).flatten()
-            y_test_actual = lstm_scaler.inverse_transform(y_te.reshape(-1, 1)).flatten()
-
-            status_box.info('Fitting ARIMA...')
-            prog.progress(55)
-            values = df[sc].values.astype(float)
-            train_series = values[:lstm_test_start_idx]
-            test_series = values[lstm_test_start_idx:]
-            hybrid = HybridArimaXGBoost(arima_order=arima_tuple)
-            hybrid.fit(train_series)
-
-            status_box.info('Training XGBoost on residuals...')
-            prog.progress(70)
-            hybrid_preds = hybrid.evaluate_on_test(train_series, test_series)
-
-            min_len = min(len(lstm_preds), len(hybrid_preds), len(y_test_actual))
-            if min_len < len(lstm_preds):
-                lstm_preds = lstm_preds[:min_len]
-            if min_len < len(hybrid_preds):
-                hybrid_preds = hybrid_preds[:min_len]
-            if min_len < len(y_test_actual):
-                y_test_actual = y_test_actual[:min_len]
-
-            status_box.info('Comparing models...')
-            prog.progress(85)
-            comparator = ModelComparison()
-            comp_df = comparator.compare_models(
-                y_test_actual,
-                {'LSTM': lstm_preds, 'Hybrid ARIMA+XGBoost': hybrid_preds}
-            )
-            best_info = comparator.get_best_model(comp_df, 'RMSE')
-
-            status_box.info('Fitting Hybrid model on full dataset for forecasting...')
-            prog.progress(90)
-            hybrid_full = HybridArimaXGBoost(arima_order=arima_tuple)
-            hybrid_full.fit(values)
+        # ALSO fit hybrid on FULL data for forecasting (Bug B4 fix)
+        # The model used for evaluation is trained on train split only.
+        # For forecasting, we need a model trained on ALL available data.
+        status_box.info('Fitting Hybrid model on full dataset for forecasting...')
+        prog.progress(90)
+        hybrid_full = HybridArimaXGBoost(arima_order=arima_tuple)
+        hybrid_full.fit(values)  # Fit on ALL data
 
         prog.progress(100)
         status_box.success('Training complete.')
 
         # Persist
-        st.session_state.models_trained = True
-        st.session_state.predictions = {
-            'lstm': lstm_preds,
-            'hybrid': hybrid_preds,
-            'y_test': y_test_actual,
-            'comp_df': comp_df,
+        st.session_state.models_trained   = True
+        st.session_state.predictions      = {
+            'lstm':           lstm_preds,
+            'hybrid':         hybrid_preds,
+            'y_test':         y_test_actual,
+            'lstm_obj':       lstm,
+            'hybrid_obj':     hybrid,          # evaluation model (trained on train split)
+            'hybrid_obj_full': hybrid_full,    # forecasting model (trained on full data)
+            'comp_df':        comp_df,
         }
-        if is_panel:
-            st.session_state.predictions['lstm_obj'] = service.lstm_model
-            st.session_state.predictions['hybrid_obj'] = service.hybrid_model
-        else:
-            st.session_state.predictions['lstm_obj'] = lstm
-            st.session_state.predictions['hybrid_obj'] = hybrid
-            st.session_state.predictions['hybrid_obj_full'] = hybrid_full
-
         st.session_state.comparison_df = comp_df
-        st.session_state.best_model = best_info['best_model']
+        st.session_state.best_model    = best_info['best_model']
+        # Reset forecast
         st.session_state.forecast_generated = False
-        st.session_state.forecast_lstm = None
-        st.session_state.forecast_hybrid = None
-        st.session_state.forecast_dates = None
+        st.session_state.forecast_lstm      = None
+        st.session_state.forecast_hybrid    = None
+        st.session_state.forecast_dates     = None
 
         st.rerun()
 
@@ -1982,7 +1951,9 @@ Step 4 - Forecast = ARIMA + XGBoost correction
             import traceback
             st.code(traceback.format_exc())
 
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE: MODEL COMPARISON
+# ══════════════════════════════════════════════════════════════════════════════
 def _page_comparison():
     _ph('Model Comparison', 'Evaluate and compare LSTM vs Hybrid ARIMA+XGBoost performance')
     if _guard_data('Model Comparison'):
@@ -2098,340 +2069,192 @@ def _page_comparison():
 # PAGE: FORECAST
 # ══════════════════════════════════════════════════════════════════════════════
 def _page_forecast():
-    _ph('Forecast', 'Generate predictions for test.csv and future demand forecasts')
+    _ph('Forecast', 'Generate future demand forecasts from trained models')
     if _guard_data('Forecast'):
         return
     if _guard_trained('Forecast'):
         return
 
-    df = st.session_state.data
-    dc = st.session_state.selected_date_col
-    sc = st.session_state.selected_sales_col
-    store_c = st.session_state.selected_store_col
-    sku_c = st.session_state.selected_sku_col
+    df            = st.session_state.data
+    dc            = st.session_state.selected_date_col
+    sc            = st.session_state.selected_sales_col
     forecast_steps = st.session_state.forecast_steps
-    seq_length = st.session_state.seq_length
-    best_model = st.session_state.best_model
-    test_df = st.session_state.test_df
+    seq_length     = st.session_state.seq_length
+    best_model     = st.session_state.best_model
 
-    is_panel = store_c is not None and sku_c is not None and store_c in df.columns and sku_c in df.columns
+    # ── Config Summary ────────────────────────────────────────────────────────
+    _sec('Forecast Configuration')
+    cfg_cols = st.columns(3)
+    cfg_cols[0].markdown(_kpi('Model', best_model or 'Both', 'Selected best model', ''), unsafe_allow_html=True)
+    cfg_cols[1].markdown(_kpi('Horizon', f'{forecast_steps} days', 'Future periods', ''), unsafe_allow_html=True)
+    cfg_cols[2].markdown(_kpi('Last Date', df[dc].max().strftime('%d %b %Y') if dc in df else 'N/A',
+                              'Forecast starts after this', ''), unsafe_allow_html=True)
 
-    # Forecast Mode Selection
-    _sec('Forecast Mode')
-    mode = st.radio(
-        'Select forecast type',
-        ['Predict test.csv (for submission)', 'Future forecast (beyond train data)'],
-        horizontal=True,
-        key='forecast_mode'
-    )
+    st.markdown('<br>', unsafe_allow_html=True)
 
-    if mode == 'Predict test.csv (for submission)':
-        if test_df is None:
-            st.warning('Please upload test.csv in the Data page first.')
-            return
+    c1, c2 = st.columns([2, 6])
+    with c1:
+        gen_btn = st.button('Generate Forecast', type='primary', use_container_width=True)
 
-        _sec('Test.csv Prediction')
-        st.caption('Generates predictions for test.csv using historical context from train.csv. Output matches sample_submission.csv format.')
+    if gen_btn:
+        prog = st.progress(0)
+        status = st.empty()
+        try:
+            preprocessor = st.session_state.preprocessor
+            lstm_obj  = st.session_state.predictions.get('lstm_obj')
+            hybrid_obj = st.session_state.predictions.get('hybrid_obj_full')
 
-        c1, c2 = st.columns([2, 6])
-        with c1:
-            pred_btn = st.button('Generate Test Predictions', type='primary', use_container_width=True)
+            if hybrid_obj is None:
+                # Fallback for backward compatibility
+                hybrid_obj = st.session_state.predictions.get('hybrid_obj')
 
-        if pred_btn:
-            prog = st.progress(0)
-            status = st.empty()
-            try:
-                from src.services.forecasting_service import ForecastingService
+            status.info('Preparing LSTM input sequence...')
+            prog.progress(10)
+            # Use the scaler that was fit on TRAINING DATA ONLY (no leakage)
+            # The preprocessor.scaler is now the training-fitted scaler
+            scaled_all = preprocessor.scale_data(df[sc].values.reshape(-1, 1), fit=False)
+            last_seq   = scaled_all[-seq_length:].flatten()
 
-                # Get the forecasting service
-                service = st.session_state.get('_forecasting_service')
-                if service is None:
-                    service = ForecastingService(
-                        seq_length=seq_length,
-                        lstm_epochs=st.session_state.lstm_epochs,
-                        lstm_batch_size=st.session_state.lstm_batch,
-                        arima_order=_parse_arima_order(),
-                    )
-                    # Load trained models from session state
-                    service.lstm_model = st.session_state.predictions.get('lstm_obj')
-                    service.hybrid_model = st.session_state.predictions.get('hybrid_obj')
-                    service.preprocessor = st.session_state.preprocessor
-                    service._panel_scalers = st.session_state.preprocessor._panel_scalers
-                    service._is_trained = True
+            status.info('Generating LSTM forecast...')
+            prog.progress(30)
+            lstm_fc = lstm_obj.forecast_future(last_seq, steps=forecast_steps, scaler=preprocessor.scaler)
 
-                status.info('Generating predictions for test.csv...')
-                prog.progress(20)
+            status.info('Generating Hybrid ARIMA+XGBoost forecast...')
+            prog.progress(60)
+            # Use the model trained on FULL data for forecasting (Bug B4 fix)
+            hybrid_fc = hybrid_obj.forecast_future(steps=forecast_steps)
 
-                # Generate test predictions
-                submission_df = service.generate_test_predictions(
-                    train_df=st.session_state.train_df,
-                    test_df=test_df,
-                    sales_col=sc,
-                    store_col=store_c,
-                    sku_col=sku_c,
-                    date_col=dc,
-                    record_id_col='record_ID',
-                )
+            prog.progress(90)
+            # Future dates
+            last_date = df[dc].max()
+            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
+                                         periods=forecast_steps, freq='D')
 
-                prog.progress(90)
+            st.session_state.forecast_generated = True
+            st.session_state.forecast_lstm      = lstm_fc
+            st.session_state.forecast_hybrid    = hybrid_fc
+            st.session_state.forecast_dates     = future_dates
 
-                st.session_state.test_predictions = submission_df
-                st.session_state.test_record_ids = submission_df['record_ID'].values
+            prog.progress(100)
+            status.success('Forecast generated successfully.')
+            st.rerun()
 
-                prog.progress(100)
-                status.success('Test predictions generated successfully.')
-                st.rerun()
+        except Exception as exc:
+            prog.empty()
+            status.empty()
+            st.error('Forecast generation failed.')
+            with st.expander('Technical details'):
+                st.code(str(exc))
+                import traceback
+                st.code(traceback.format_exc())
+        return
 
-            except Exception as exc:
-                prog.empty()
-                status.empty()
-                st.error('Test prediction failed.')
-                with st.expander('Technical details'):
-                    st.code(str(exc))
-                    import traceback
-                    st.code(traceback.format_exc())
-            return
+    if not st.session_state.forecast_generated:
+        return
 
-        # Show test predictions if available
-        if st.session_state.test_predictions is not None:
-            st.markdown('<br>', unsafe_allow_html=True)
-            _sec('Test Predictions (Submission Format)')
-            
-            sub_df = st.session_state.test_predictions
-            st.dataframe(sub_df.head(20), use_container_width=True, height=300)
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                st.metric('Total Predictions', len(sub_df))
-            with c2:
-                st.metric('Avg Predicted Units', f'{sub_df["units_sold"].mean():.2f}')
+    # ── KPI Cards ─────────────────────────────────────────────────────────────
+    _sec('Forecast Summary')
+    lstm_fc   = st.session_state.forecast_lstm
+    hybrid_fc = st.session_state.forecast_hybrid
+    ens       = (lstm_fc + hybrid_fc) / 2
+    dates     = st.session_state.forecast_dates
 
-            # Download button
-            _download_csv(sub_df, 'Download predictions.csv', 'predictions.csv', 'dl_test_pred')
+    kpi_cols = st.columns(5)
+    kpi_cols[0].markdown(_kpi('Horizon',         f'{forecast_steps} days', 'Forecast periods', ''), unsafe_allow_html=True)
+    kpi_cols[1].markdown(_kpi('Avg (Ensemble)',   _fmt(ens.mean()), 'units', 'kpi-blue'), unsafe_allow_html=True)
+    kpi_cols[2].markdown(_kpi('Peak Forecast',    _fmt(ens.max()), 'units', ''), unsafe_allow_html=True)
+    kpi_cols[3].markdown(_kpi('Min Forecast',     _fmt(ens.min()), 'units', ''), unsafe_allow_html=True)
+    kpi_cols[4].markdown(_kpi('Best Model',       best_model or 'N/A', 'By RMSE', 'kpi-green'), unsafe_allow_html=True)
 
-            # Validate against sample submission if available
-            if st.session_state.sample_submission is not None:
-                sample = st.session_state.sample_submission
-                if len(sub_df) == len(sample):
-                    st.success(f'Prediction count matches sample submission: {len(sample)} rows')
-                else:
-                    st.warning(f'Row count mismatch: predictions={len(sub_df)}, sample={len(sample)}')
+    st.markdown('<br>', unsafe_allow_html=True)
 
-    else:
-        # Future forecast mode (existing functionality)
-        _sec('Future Forecast Configuration')
-        cfg_cols = st.columns(3)
-        cfg_cols[0].markdown(_kpi('Model', best_model or 'Both', 'Selected best model', ''), unsafe_allow_html=True)
-        cfg_cols[1].markdown(_kpi('Horizon', f'{forecast_steps} days', 'Future periods', ''), unsafe_allow_html=True)
-        cfg_cols[2].markdown(_kpi('Last Date', df[dc].max().strftime('%d %b %Y') if dc in df else 'N/A',
-                                  'Forecast starts after this', ''), unsafe_allow_html=True)
+    # ── Forecast Chart ────────────────────────────────────────────────────────
+    _sec('Forecast Chart')
+    tail = min(90, len(df))
+    hist_df = df.tail(tail)
+    y_test  = st.session_state.predictions.get('y_test', [])
+    preds_lstm_test = st.session_state.predictions.get('lstm', [])
 
-        st.markdown('<br>', unsafe_allow_html=True)
+    fig = go.Figure()
 
-        c1, c2 = st.columns([2, 6])
-        with c1:
-            gen_btn = st.button('Generate Future Forecast', type='primary', use_container_width=True)
+    # Historical
+    fig.add_trace(go.Scatter(
+        x=hist_df[dc], y=hist_df[sc],
+        mode='lines', name='Historical',
+        line=dict(color=_C_HIST, width=1.5),
+    ))
 
-        if gen_btn:
-            prog = st.progress(0)
-            status = st.empty()
-            try:
-                preprocessor = st.session_state.preprocessor
-                lstm_obj = st.session_state.predictions.get('lstm_obj')
-                hybrid_obj = st.session_state.predictions.get('hybrid_obj_full')
-
-                if hybrid_obj is None:
-                    hybrid_obj = st.session_state.predictions.get('hybrid_obj')
-
-                status.info('Preparing LSTM input sequence...')
-                prog.progress(10)
-
-                if is_panel:
-                    # Panel future forecast
-                    from src.services.forecasting_service import ForecastingService
-                    service = st.session_state.get('_forecasting_service')
-                    if service is None:
-                        service = ForecastingService(
-                            seq_length=seq_length,
-                            lstm_epochs=st.session_state.lstm_epochs,
-                            lstm_batch_size=st.session_state.lstm_batch,
-                            arima_order=_parse_arima_order(),
-                        )
-                        service.lstm_model = lstm_obj
-                        service.hybrid_model = hybrid_obj
-                        service.preprocessor = preprocessor
-                        service._panel_scalers = preprocessor._panel_scalers
-                        service._is_trained = True
-
-                    panel_forecasts = service.generate_future_forecast_panel(
-                        train_df=df,
-                        sales_col=sc,
-                        forecast_steps=forecast_steps,
-                        store_col=store_c,
-                        sku_col=sku_c,
-                    )
-
-                    # For display, aggregate across groups (mean)
-                    all_lstm = []
-                    all_hybrid = []
-                    for preds in panel_forecasts.values():
-                        all_lstm.append(preds['LSTM'])
-                        all_hybrid.append(preds['Hybrid ARIMA+XGBoost'])
-
-                    if all_lstm:
-                        lstm_fc = np.mean(all_lstm, axis=0)
-                        hybrid_fc = np.mean(all_hybrid, axis=0)
-                    else:
-                        lstm_fc = np.zeros(forecast_steps)
-                        hybrid_fc = np.zeros(forecast_steps)
-                else:
-                    # Single series
-                    scaled_all = preprocessor.scale_data(df[sc].values.reshape(-1, 1), fit=False)
-                    last_seq = scaled_all[-seq_length:].flatten()
-                    lstm_fc = lstm_obj.forecast_future(last_seq, steps=forecast_steps, scaler=preprocessor.scaler)
-                    hybrid_fc = hybrid_obj.forecast_future(steps=forecast_steps)
-
-                prog.progress(60)
-
-                last_date = df[dc].max()
-                future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
-                                             periods=forecast_steps, freq='D')
-
-                st.session_state.forecast_generated = True
-                st.session_state.forecast_lstm = lstm_fc
-                st.session_state.forecast_hybrid = hybrid_fc
-                st.session_state.forecast_dates = future_dates
-
-                prog.progress(100)
-                status.success('Future forecast generated successfully.')
-                st.rerun()
-
-            except Exception as exc:
-                prog.empty()
-                status.empty()
-                st.error('Forecast generation failed.')
-                with st.expander('Technical details'):
-                    st.code(str(exc))
-                    import traceback
-                    st.code(traceback.format_exc())
-            return
-
-    # Show future forecast if generated
-    if mode == 'Future forecast (beyond train data)' and st.session_state.forecast_generated:
-        lstm_fc = st.session_state.forecast_lstm
-        hybrid_fc = st.session_state.forecast_hybrid
-        ens = (lstm_fc + hybrid_fc) / 2
-        dates = st.session_state.forecast_dates
-
-        st.markdown('<br>', unsafe_allow_html=True)
-        _sec('Forecast Summary')
-        kpi_cols = st.columns(5)
-        kpi_cols[0].markdown(_kpi('Horizon', f'{forecast_steps} days', 'Forecast periods', ''), unsafe_allow_html=True)
-        kpi_cols[1].markdown(_kpi('Avg (Ensemble)', _fmt(ens.mean()), 'units', 'kpi-blue'), unsafe_allow_html=True)
-        kpi_cols[2].markdown(_kpi('Peak Forecast', _fmt(ens.max()), 'units', ''), unsafe_allow_html=True)
-        kpi_cols[3].markdown(_kpi('Min Forecast', _fmt(ens.min()), 'units', ''), unsafe_allow_html=True)
-        kpi_cols[4].markdown(_kpi('Best Model', best_model or 'N/A', 'By RMSE', 'kpi-green'), unsafe_allow_html=True)
-
-        st.markdown('<br>', unsafe_allow_html=True)
-
-        _sec('Forecast Chart')
-        tail = min(90, len(df))
-        hist_df = df.tail(tail)
-        y_test = st.session_state.predictions.get('y_test', [])
-
-        fig = go.Figure()
-
-        # Historical
+    # Test actual (last portion of df)
+    test_len = len(y_test)
+    if test_len > 0:
+        test_dates = df[dc].values[-test_len:]
         fig.add_trace(go.Scatter(
-            x=hist_df[dc], y=hist_df[sc],
-            mode='lines', name='Historical',
-            line=dict(color=_C_HIST, width=1.5),
+            x=test_dates, y=y_test,
+            mode='lines', name='Test Actual',
+            line=dict(color=_C_ACTUAL, width=2),
         ))
 
-        # Test actual (last portion of df)
-        test_len = len(y_test)
-        if test_len > 0:
-            test_dates = df[dc].values[-test_len:]
-            fig.add_trace(go.Scatter(
-                x=test_dates, y=y_test,
-                mode='lines', name='Validation Actual',
-                line=dict(color=_C_ACTUAL, width=2),
-            ))
+    # Future forecasts
+    fig.add_trace(go.Scatter(
+        x=dates, y=lstm_fc,
+        mode='lines', name='LSTM Forecast',
+        line=dict(color=_C_LSTM, width=2, dash='dash'),
+    ))
+    fig.add_trace(go.Scatter(
+        x=dates, y=hybrid_fc,
+        mode='lines', name='Hybrid Forecast',
+        line=dict(color=_C_HYBRID, width=2, dash='dot'),
+    ))
+    fig.add_trace(go.Scatter(
+        x=dates, y=ens,
+        mode='lines', name='Ensemble',
+        line=dict(color=_C_ENS, width=2.5),
+    ))
 
-        # Future forecasts
-        fig.add_trace(go.Scatter(
-            x=dates, y=lstm_fc,
-            mode='lines', name='LSTM Forecast',
-            line=dict(color=_C_LSTM, width=2, dash='dash'),
-        ))
-        fig.add_trace(go.Scatter(
-            x=dates, y=hybrid_fc,
-            mode='lines', name='Hybrid Forecast',
-            line=dict(color=_C_HYBRID, width=2, dash='dot'),
-        ))
-        fig.add_trace(go.Scatter(
-            x=dates, y=ens,
-            mode='lines', name='Ensemble',
-            line=dict(color=_C_ENS, width=2.5),
-        ))
+    # Divider line
+    last_d = df[dc].max()
+    fig.add_vline(x=last_d, line_dash='dot', line_color='#94a3b8', line_width=1)
+    fig.add_annotation(x=last_d, y=1, yref='paper', text='Forecast start',
+                       showarrow=False, font=dict(size=10, color='#94a3b8'),
+                       xanchor='left', xshift=4)
 
-        # Divider line
-        last_d = df[dc].max()
-        fig.add_vline(x=last_d, line_dash='dot', line_color='#94a3b8', line_width=1)
-        fig.add_annotation(x=last_d, y=1, yref='paper', text='Forecast start',
-                           showarrow=False, font=dict(size=10, color='#94a3b8'),
-                           xanchor='left', xshift=4)
+    fig.update_layout(**_cl(title='Demand Forecast', height=370,
+                            xaxis_title='Date', yaxis_title='Demand'))
+    st.plotly_chart(fig, use_container_width=True)
 
-        fig.update_layout(**_cl(title='Demand Forecast', height=370,
-                                xaxis_title='Date', yaxis_title='Demand'))
-        st.plotly_chart(fig, use_container_width=True)
+    # ── Forecast Table ────────────────────────────────────────────────────────
+    _sec('Forecast Data')
+    fc_df = pd.DataFrame({
+        'Date':     dates.strftime('%Y-%m-%d'),
+        'LSTM':     np.round(lstm_fc, 2),
+        'Hybrid':   np.round(hybrid_fc, 2),
+        'Ensemble': np.round(ens, 2),
+    })
+    st.dataframe(fc_df, use_container_width=True, height=220, hide_index=True)
 
-        # Forecast Table
-        _sec('Forecast Data')
-        fc_df = pd.DataFrame({
-            'Date': dates.strftime('%Y-%m-%d'),
-            'LSTM': np.round(lstm_fc, 2),
-            'Hybrid': np.round(hybrid_fc, 2),
-            'Ensemble': np.round(ens, 2),
-        })
-        st.dataframe(fc_df, use_container_width=True, height=220, hide_index=True)
+    st.markdown('<br>', unsafe_allow_html=True)
+    _download_csv(fc_df, 'Download forecast CSV', 'forecast_results.csv', 'dl_fc')
 
-        st.markdown('<br>', unsafe_allow_html=True)
-        _download_csv(fc_df, 'Download forecast CSV', 'forecast_results.csv', 'dl_fc')
-
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE: INVENTORY
+# ══════════════════════════════════════════════════════════════════════════════
 def _page_inventory():
     _ph('Inventory Optimization', 'Convert demand forecasts into replenishment decisions')
     if _guard_data('Inventory'):
         return
-
-    df = st.session_state.data
-    sc = st.session_state.selected_sales_col
-    store_c = st.session_state.selected_store_col
-    sku_c = st.session_state.selected_sku_col
-
-    is_panel = store_c is not None and sku_c is not None and store_c in df.columns and sku_c in df.columns
-
-    # Use test predictions if available, otherwise use future forecast
-    if st.session_state.test_predictions is not None:
-        # Aggregate test predictions for inventory planning
-        test_preds = st.session_state.test_predictions['units_sold'].values
-        forecast_data = test_preds
-        forecast_source = 'test.csv predictions'
-    elif st.session_state.forecast_generated:
-        lstm_fc = st.session_state.forecast_lstm
-        hybrid_fc = st.session_state.forecast_hybrid
-        ens_fc = (lstm_fc + hybrid_fc) / 2
-        forecast_data = ens_fc
-        forecast_source = 'future forecast'
-    else:
-        st.warning('Please generate test predictions (Forecast page) or future forecast first.')
+    if _guard_forecast('Inventory'):
         return
 
-    lead_time = st.session_state.lead_time
-    service_level = st.session_state.service_level_pct / 100.0
+    df        = st.session_state.data
+    sc        = st.session_state.selected_sales_col
+    lstm_fc   = st.session_state.forecast_lstm
+    hybrid_fc = st.session_state.forecast_hybrid
+    ens_fc    = (lstm_fc + hybrid_fc) / 2
 
-    # Inventory Inputs
+    lead_time       = st.session_state.lead_time
+    service_level   = st.session_state.service_level_pct / 100.0
+
+    # ── Inventory Inputs ──────────────────────────────────────────────────────
     _sec('Configuration')
     inp_cols = st.columns([1, 1, 1, 3])
     with inp_cols[0]:
@@ -2441,29 +2264,23 @@ def _page_inventory():
         st.markdown(_kpi('Lead Time', f'{lead_time} days', 'From sidebar', ''), unsafe_allow_html=True)
     with inp_cols[2]:
         st.markdown(_kpi('Service Level', f'{st.session_state.service_level_pct}%', 'From sidebar', ''), unsafe_allow_html=True)
-    with inp_cols[3]:
-        st.markdown(_kpi('Forecast Source', forecast_source, '', ''), unsafe_allow_html=True)
 
     st.markdown('<br>', unsafe_allow_html=True)
 
-    # For panel data, show per-store/SKU inventory recommendations
-    if is_panel:
-        st.info('Panel data detected. Showing aggregated inventory recommendations. For per-store/SKU details, use the Inventory Service API.')
-
-    # Calculations
+    # ── Calculations ──────────────────────────────────────────────────────────
     try:
         inv_opt = InventoryOptimization(service_level=service_level)
-        recs = inv_opt.generate_inventory_recommendations(
-            demand_data=df[sc].values,
-            lead_time=lead_time,
-            forecast_data=forecast_data,
+        recs    = inv_opt.generate_inventory_recommendations(
+            demand_data   = df[sc].values,
+            lead_time     = lead_time,
+            forecast_data = ens_fc,
         )
 
         safety_stock = recs['safety_stock']
-        rop = recs['reorder_point']
-        avg_demand = recs['average_daily_demand']
-        demand_lt = recs['demand_during_lead_time']
-        z_score = recs['z_score']
+        rop          = recs['reorder_point']
+        avg_demand   = recs['average_daily_demand']
+        demand_lt    = recs['demand_during_lead_time']
+        z_score      = recs['z_score']
 
     except Exception as exc:
         st.error('Failed to compute inventory parameters.')
@@ -2471,7 +2288,7 @@ def _page_inventory():
             st.code(str(exc))
         return
 
-    # Key Metrics
+    # ── Key Metrics ───────────────────────────────────────────────────────────
     _sec('Inventory Parameters')
     inv_c1, inv_c2, inv_c3, inv_c4 = st.columns(4)
 
@@ -2496,7 +2313,7 @@ def _page_inventory():
 
     st.markdown('<br>', unsafe_allow_html=True)
 
-    # Formula Expander
+    # ── Formula Expander ──────────────────────────────────────────────────────
     with st.expander('How is this calculated?'):
         st.markdown(f"""
         **Safety Stock** — additional inventory held to buffer demand uncertainty during lead time.
@@ -2516,19 +2333,19 @@ def _page_inventory():
 
         **Service Level** — {st.session_state.service_level_pct}% → Z-score = {z_score:.4f}
 
-        The Safety Stock uses **forecast variability** (std dev of the forecast)
+        The Safety Stock uses **forecast variability** (std dev of the ensemble forecast)
         as the demand uncertainty estimate, which is more forward-looking than historical std dev.
         """)
 
-    # Inventory Projection
+    # ── Inventory Projection ──────────────────────────────────────────────────
     _sec('Projected Inventory Levels')
     try:
         inv_proj = inv_opt.forecast_inventory_levels(
-            current_stock=current_stock,
-            forecast_demand=forecast_data,
-            reorder_point=rop,
-            lead_time=lead_time,
-            safety_stock=safety_stock,
+            current_stock  = current_stock,
+            forecast_demand = ens_fc,
+            reorder_point  = rop,
+            lead_time      = lead_time,
+            safety_stock   = safety_stock,
         )
 
         fig_inv = go.Figure()
@@ -2575,7 +2392,7 @@ def _page_inventory():
         with st.expander('Details'):
             st.code(str(exc))
 
-    # Downloads
+    # ── Downloads ─────────────────────────────────────────────────────────────
     st.markdown('<br>', unsafe_allow_html=True)
     _sec('Downloads')
     dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 4])
@@ -2584,19 +2401,21 @@ def _page_inventory():
     with dl_col1:
         _download_csv(recs_df, 'Inventory Parameters', 'inventory_parameters.csv', 'dl_inv_params')
     with dl_col2:
+        # inv_proj is defined in the try block above; use a flag
         try:
             _download_csv(inv_proj, 'Projection Data', 'inventory_projection.csv', 'dl_inv_proj')
         except NameError:
-            pass
+            pass  # inv_proj not available (projection failed)
 
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE: REPORTS
+# ══════════════════════════════════════════════════════════════════════════════
 def _page_reports():
     _ph('Reports', 'Download analysis results and forecasting outputs')
 
-    has_data = st.session_state.data is not None
-    has_trained = st.session_state.models_trained
+    has_data     = st.session_state.data is not None
+    has_trained  = st.session_state.models_trained
     has_forecast = st.session_state.forecast_generated
-    has_test_preds = st.session_state.test_predictions is not None
 
     if not has_data:
         _empty('No Reports Available',
@@ -2608,44 +2427,36 @@ def _page_reports():
 
     reports = [
         {
-            'title': 'Dataset Preview',
-            'desc': 'Processed and cleaned dataset used for training.',
+            'title':     'Dataset Preview',
+            'desc':      'Processed and cleaned dataset used for training.',
             'available': has_data,
-            'df': st.session_state.data,
-            'filename': 'dataset_processed.csv',
-            'key': 'dl_rpt_data',
+            'df':        st.session_state.data,
+            'filename':  'dataset_processed.csv',
+            'key':       'dl_rpt_data',
         },
         {
-            'title': 'Model Comparison',
-            'desc': 'MAE, RMSE, and MAPE for all trained models.',
+            'title':     'Model Comparison',
+            'desc':      'MAE, RMSE, and MAPE for all trained models.',
             'available': has_trained and st.session_state.comparison_df is not None,
-            'df': st.session_state.comparison_df,
-            'filename': 'model_comparison.csv',
-            'key': 'dl_rpt_comp',
+            'df':        st.session_state.comparison_df,
+            'filename':  'model_comparison.csv',
+            'key':       'dl_rpt_comp',
         },
         {
-            'title': 'Test Predictions (Submission)',
-            'desc': 'Predictions for test.csv in sample_submission.csv format.',
-            'available': has_test_preds,
-            'df': st.session_state.test_predictions,
-            'filename': 'predictions.csv',
-            'key': 'dl_rpt_test_pred',
-        },
-        {
-            'title': 'Forecast Results',
-            'desc': 'LSTM, Hybrid, and Ensemble forecasts with dates.',
+            'title':     'Forecast Results',
+            'desc':      'LSTM, Hybrid, and Ensemble forecasts with dates.',
             'available': has_forecast,
-            'df': None,
-            'filename': 'forecast_results.csv',
-            'key': 'dl_rpt_fc',
-            'forecast': True,
+            'df':        None,
+            'filename':  'forecast_results.csv',
+            'key':       'dl_rpt_fc',
+            'forecast':  True,
         },
     ]
 
     for rpt in reports:
         avail = rpt['available']
         border_color = '#e2e8f0' if avail else '#f1f5f9'
-        text_color = 'var(--text-primary)' if avail else 'var(--text-subtle)'
+        text_color   = 'var(--text-primary)' if avail else 'var(--text-subtle)'
 
         col_info, col_dl = st.columns([5, 2])
         with col_info:
@@ -2664,14 +2475,14 @@ def _page_reports():
             st.markdown('<div style="margin-top:14px;">', unsafe_allow_html=True)
             if avail:
                 if rpt.get('forecast'):
-                    lstm_fc = st.session_state.forecast_lstm
+                    lstm_fc   = st.session_state.forecast_lstm
                     hybrid_fc = st.session_state.forecast_hybrid
-                    ens = (lstm_fc + hybrid_fc) / 2
-                    dates = st.session_state.forecast_dates
+                    ens       = (lstm_fc + hybrid_fc) / 2
+                    dates     = st.session_state.forecast_dates
                     fc_df = pd.DataFrame({
-                        'Date': dates.strftime('%Y-%m-%d'),
-                        'LSTM': np.round(lstm_fc, 2),
-                        'Hybrid': np.round(hybrid_fc, 2),
+                        'Date':     dates.strftime('%Y-%m-%d'),
+                        'LSTM':     np.round(lstm_fc, 2),
+                        'Hybrid':   np.round(hybrid_fc, 2),
                         'Ensemble': np.round(ens, 2),
                     })
                     _download_csv(fc_df, 'Download CSV', rpt['filename'], rpt['key'])
@@ -2681,7 +2492,9 @@ def _page_reports():
                 st.button('Not available', disabled=True, key=f'dis_{rpt["key"]}', use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE: SETTINGS
+# ══════════════════════════════════════════════════════════════════════════════
 def _page_settings():
     _ph('Settings', 'Configure advanced model parameters and application options')
 

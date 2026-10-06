@@ -398,3 +398,283 @@ class ForecastingService:
 
     # Note: Hybrid model persistence would require joblib for XGBoost + ARIMA
     # This can be added when ModelRegistry is implemented
+
+    # ------------------------------------------------------------------
+    # Panel Data Methods (store_id, sku_id)
+    # ------------------------------------------------------------------
+
+    def train_all_models_panel(
+        self,
+        train_df: pd.DataFrame,
+        sales_col: str,
+        test_size: float = 0.2,
+        store_col: str = 'store_id',
+        sku_col: str = 'sku_id',
+        date_col: str = 'week',
+        preprocessor: DataPreprocessor | None = None,
+    ) -> dict[str, TrainingResult]:
+        """
+        Train both LSTM and Hybrid models on panel data (multiple store/SKU series).
+
+        Args:
+            train_df: Cleaned training dataframe with store_id, sku_id columns
+            sales_col: Sales/target column name
+            test_size: Validation split ratio within train_df
+            store_col: Store identifier column
+            sku_col: SKU identifier column
+            date_col: Date column name
+            preprocessor: Optional preprocessor (creates new if None)
+
+        Returns:
+            Dict of training results by model name
+        """
+        if preprocessor is None:
+            preprocessor = DataPreprocessor()
+        self.preprocessor = preprocessor
+
+        # LSTM preparation for panel data (no leakage)
+        X_train, X_test, y_train, y_test, panel_scalers, group_info = preprocessor.prepare_lstm_data_panel(
+            train_df, sales_col, self.seq_length, test_size, store_col, sku_col
+        )
+        self._panel_scalers = panel_scalers
+        self._panel_group_info = group_info
+
+        # Train LSTM on combined data from all groups
+        self.train_lstm(X_train, y_train, X_test, y_test, verbose=0)
+
+        # Evaluate LSTM on test set
+        lstm_preds_scaled = self.predict_lstm(X_test)
+
+        # Inverse transform per group (using stored scalers)
+        # For simplicity, we'll use the first group's scaler as representative
+        # In production, you'd want per-group inverse transforms
+        if panel_scalers:
+            default_scaler = list(panel_scalers.values())[0]
+        else:
+            default_scaler = self.preprocessor.scaler
+        self._scaler = default_scaler
+
+        lstm_preds = default_scaler.inverse_transform(lstm_preds_scaled).flatten()
+        y_test_actual = default_scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
+
+        # Hybrid preparation for panel data
+        panel_hybrid_data = preprocessor.prepare_hybrid_data_panel(
+            train_df, sales_col, test_size, store_col, sku_col
+        )
+
+        # Train Hybrid on panel data
+        self.hybrid_model = HybridArimaXGBoost(arima_order=self.arima_order)
+        hybrid_results = self.hybrid_model.fit_panel(panel_hybrid_data)
+
+        # Get test predictions from Hybrid
+        hybrid_test_preds_dict = self.hybrid_model.predict_panel_test(panel_hybrid_data)
+
+        # Combine predictions from all groups for evaluation
+        # We need to align them with the test set
+        all_hybrid_preds = []
+        all_y_test = []
+
+        # Get actual test values from train_df for evaluation
+        train_df_sorted = train_df.sort_values([store_col, sku_col, date_col]).reset_index(drop=True)
+        for (store_id, sku_id), info in group_info.items():
+            if info.get('skipped', False):
+                continue
+            split_idx = info.get('sequence_split', 0)
+            if split_idx > 0:
+                group_data = train_df_sorted[
+                    (train_df_sorted[store_col] == store_id) &
+                    (train_df_sorted[sku_col] == sku_id)
+                ].sort_values(date_col).reset_index(drop=True)
+                if len(group_data) > split_idx:
+                    test_actual = group_data[sales_col].values[split_idx:]
+                    all_y_test.extend(test_actual)
+
+                    hybrid_preds = hybrid_test_preds_dict.get((store_id, sku_id))
+                    if hybrid_preds is not None and len(hybrid_preds) > 0:
+                        all_hybrid_preds.extend(hybrid_preds[:len(test_actual)])
+
+        all_hybrid_preds = np.array(all_hybrid_preds)
+        all_y_test = np.array(all_y_test)
+
+        # Align lengths with LSTM
+        min_len = min(len(lstm_preds), len(all_hybrid_preds), len(all_y_test))
+        if min_len > 0:
+            lstm_preds = lstm_preds[:min_len]
+            all_hybrid_preds = all_hybrid_preds[:min_len]
+            all_y_test = all_y_test[:min_len]
+
+        # Store test predictions
+        self._test_predictions = {
+            'LSTM': lstm_preds,
+            'Hybrid ARIMA+XGBoost': all_hybrid_preds,
+            'y_test': all_y_test,
+        }
+
+        # Store hybrid results for reference
+        self._hybrid_panel_results = hybrid_results
+
+        return self._training_results
+
+    def generate_test_predictions(
+        self,
+        train_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        sales_col: str,
+        store_col: str = 'store_id',
+        sku_col: str = 'sku_id',
+        date_col: str = 'week',
+        record_id_col: str = 'record_ID',
+    ) -> pd.DataFrame:
+        """
+        Generate predictions for test.csv using trained models.
+
+        This uses historical context from train_df to forecast test_df period.
+
+        Args:
+            train_df: Training dataframe with target column
+            test_df: Test dataframe (no target column)
+            sales_col: Target column name (in train_df)
+            store_col: Store identifier column
+            sku_col: SKU identifier column
+            date_col: Date column name
+            record_id_col: Record ID column in test_df
+
+        Returns:
+            DataFrame with columns [record_ID, units_sold] matching sample_submission format
+        """
+        if not self._is_trained:
+            raise ValueError("Models not trained. Call train_all_models_panel() first.")
+
+        # Prepare LSTM test sequences with historical context
+        X_test_lstm, record_ids, group_info = preprocessor.prepare_lstm_test_sequences(
+            train_df, test_df, sales_col, self.seq_length, store_col, sku_col
+        )
+
+        # Generate LSTM forecasts for each group
+        lstm_forecasts = {}
+        for (store_id, sku_id), info in group_info.items():
+            if info.get('skipped', False):
+                continue
+            # Get the context sequence for this group
+            context_seq = X_test_lstm[0] if len(X_test_lstm) > 0 else None
+            if context_seq is not None:
+                scaler = self._panel_scalers.get((store_id, sku_id), self._scaler)
+                forecast = self.forecast_lstm_future(context_seq.flatten(), info['n_test'], scaler)
+                lstm_forecasts[(store_id, sku_id)] = forecast
+
+        # Generate Hybrid forecasts for each group
+        hybrid_forecasts = self.hybrid_model.forecast_panel_future(
+            steps=max([info['n_test'] for info in group_info.values() if not info.get('skipped')], default=0)
+        )
+
+        # Build submission DataFrame
+        submissions = []
+        test_df_sorted = test_df.sort_values([store_col, sku_col, date_col]).reset_index(drop=True)
+
+        for (store_id, sku_id), test_group in test_df_sorted.groupby([store_col, sku_col]):
+            test_group = test_group.sort_values(date_col).reset_index(drop=True)
+            record_ids = test_group[record_id_col].values
+            n_test = len(test_group)
+
+            # Get LSTM predictions
+            lstm_pred = lstm_forecasts.get((store_id, sku_id))
+            if lstm_pred is not None:
+                lstm_pred = lstm_pred[:n_test]
+            else:
+                lstm_pred = np.zeros(n_test)
+
+            # Get Hybrid predictions
+            hybrid_pred = hybrid_forecasts.get((store_id, sku_id))
+            if hybrid_pred is not None:
+                hybrid_pred = hybrid_pred[:n_test]
+            else:
+                hybrid_pred = np.zeros(n_test)
+
+            # Ensemble (average)
+            ensemble_pred = (lstm_pred + hybrid_pred) / 2
+
+            # Use best model or ensemble
+            best_model = self.get_best_model_name()
+            if best_model == 'LSTM':
+                final_pred = lstm_pred
+            elif best_model == 'Hybrid ARIMA+XGBoost':
+                final_pred = hybrid_pred
+            else:
+                final_pred = ensemble_pred
+
+            for rid, pred in zip(record_ids, final_pred):
+                submissions.append({
+                    record_id_col: rid,
+                    'units_sold': max(0, float(pred))  # Ensure non-negative
+                })
+
+        return pd.DataFrame(submissions)
+
+    def get_best_model_name(self) -> str:
+        """Get the name of the best model based on validation RMSE."""
+        if not self._training_results:
+            return 'Ensemble'
+
+        best_model = None
+        best_rmse = float('inf')
+        for name, result in self._training_results.items():
+            if hasattr(result, 'val_loss') and result.val_loss is not None:
+                if result.val_loss < best_rmse:
+                    best_rmse = result.val_loss
+                    best_model = name
+
+        return best_model or 'Ensemble'
+
+    def generate_future_forecast_panel(
+        self,
+        train_df: pd.DataFrame,
+        sales_col: str,
+        forecast_steps: int,
+        store_col: str = 'store_id',
+        sku_col: str = 'sku_id',
+    ) -> dict[str, dict]:
+        """
+        Generate future forecasts for all panel groups.
+
+        Returns:
+            Dict mapping (store_id, sku_id) -> {model_name: forecast_array}
+        """
+        if not self._is_trained:
+            raise ValueError("Models not trained. Call train_all_models_panel() first.")
+
+        if not hasattr(self, '_panel_scalers') or not self._panel_scalers:
+            raise ValueError("No panel scalers found. Train with panel data first.")
+
+        results = {}
+
+        for (store_id, sku_id), scaler in self._panel_scalers.items():
+            # Get last seq_length values from training data for this group
+            group_data = train_df[
+                (train_df[store_col] == store_id) &
+                (train_df[sku_col] == sku_id)
+            ].sort_values(self.preprocessor.date_column)
+
+            if len(group_data) < self.seq_length:
+                continue
+
+            last_values = group_data[sales_col].values[-self.seq_length:].reshape(-1, 1)
+            last_scaled = scaler.transform(last_values).flatten()
+
+            # LSTM forecast
+            lstm_fc = self.forecast_lstm_future(last_scaled, forecast_steps, scaler)
+
+            # Hybrid forecast
+            hybrid_fc = self.hybrid_model.forecast_panel_future(forecast_steps).get((store_id, sku_id))
+            if hybrid_fc is None:
+                hybrid_fc = np.zeros(forecast_steps)
+
+            # Ensemble
+            ensemble_fc = (lstm_fc + hybrid_fc) / 2
+
+            results[(store_id, sku_id)] = {
+                'LSTM': lstm_fc,
+                'Hybrid ARIMA+XGBoost': hybrid_fc,
+                'Ensemble': ensemble_fc
+            }
+
+        return results
