@@ -17,7 +17,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-#── Path Setup ────────────────────────────────────────────────────────────────
+# ── Path Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT))
 
@@ -34,9 +34,9 @@ try:
 except ImportError:
     DUCKDB_AVAILABLE = False
 
-#══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
-#══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="AI Demand Forecasting",
     page_icon="◈",
@@ -122,7 +122,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
     letter-spacing: -0.2px;
 }
 .sb-brand-sub {
-    font-size: 10px; color: #94a3b8;
+    font-size: 10px; color: #475569;
     margin: 6px 0 0 35px;
     letter-spacing: 0.3px;
 }
@@ -130,7 +130,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
 /* ─── Sidebar Section Label ─────────────────────────────────────────────── */
 .sb-sec {
     font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px;
-    text-transform: uppercase; color: #94a3b8;
+    text-transform: uppercase; color: #334155;
     padding: 14px 4px 5px 4px;
     display: block;
 }
@@ -142,64 +142,50 @@ section[data-testid="stSidebar"] hr {
     margin: 10px 0 !important;
 }
 
-/* ─── Sidebar Navigation ──────────────────────────────────────────────── */
-
+/* ─── Sidebar Nav Radio ─────────────────────────────────────────────────── */
 section[data-testid="stSidebar"] [data-testid="stRadio"] {
     margin: 0 !important;
 }
-
 section[data-testid="stSidebar"] [data-testid="stRadio"] > label {
     display: none !important;
 }
-
 section[data-testid="stSidebar"] [data-testid="stRadio"] > div {
-    gap: 2px !important;
-    flex-direction: column !important;
+    gap: 1px !important; flex-direction: column !important;
 }
-
-/* Navigation item */
+/* Each radio item */
 section[data-testid="stSidebar"] [data-baseweb="radio"] {
     width: 100% !important;
-    min-height: 34px !important;
-    border-radius: 7px !important;
-    background: transparent !important;
+    border-radius: 6px !important;
+    transition: background 0.14s ease !important;
 }
-
-/* Hide radio indicator */
+/* Hide the circle */
 section[data-testid="stSidebar"] [data-baseweb="radio"] > div:first-child {
     display: none !important;
+    width: 0 !important; height: 0 !important;
 }
-
-/* Force navigation text */
-section[data-testid="stSidebar"] [data-baseweb="radio"] label,
-section[data-testid="stSidebar"] [data-baseweb="radio"] label p,
-section[data-testid="stSidebar"] [data-baseweb="radio"] span {
-    color: #e2e8f0 !important;
+/* Label */
+section[data-testid="stSidebar"] [data-baseweb="radio"] label {
+    cursor: pointer !important;
+    padding: 8px 10px !important;
+    width: 100% !important;
+    display: block !important;
+    color: #cbd5e1 !important;
     font-size: 13px !important;
     font-weight: 500 !important;
+    border-radius: 6px !important;
+    transition: color 0.14s, background 0.14s !important;
 }
-
-/* Hover */
-section[data-testid="stSidebar"] [data-baseweb="radio"]:hover {
-    background: rgba(255, 255, 255, 0.08) !important;
+section[data-testid="stSidebar"] [data-baseweb="radio"] label:hover {
+    color: #cbd5e1 !important;
+    background: rgba(255,255,255,0.05) !important;
 }
-
-section[data-testid="stSidebar"] [data-baseweb="radio"]:hover label,
-section[data-testid="stSidebar"] [data-baseweb="radio"]:hover label p,
-section[data-testid="stSidebar"] [data-baseweb="radio"]:hover span {
-    color: #ffffff !important;
-}
-
 /* Selected */
 section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] {
-    background: rgba(59, 130, 246, 0.22) !important;
+    background: rgba(30,64,175,0.18) !important;
 }
-
-section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label,
-section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label p,
-section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] span {
-    color: #bfdbfe !important;
-    font-weight: 700 !important;
+section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label {
+    color: #93c5fd !important;
+    font-weight: 600 !important;
 }
 
 /* ─── Sidebar Number Inputs ─────────────────────────────────────────────── */
@@ -229,7 +215,7 @@ section[data-testid="stSidebar"] button {
 }
 .sb-status-item {
     display: flex; align-items: center; gap: 8px;
-    font-size: 11px; color: #94a3b8;
+    font-size: 11px; color: #475569;
     padding: 2px 0;
 }
 .sb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
@@ -532,6 +518,41 @@ section[data-testid="stSidebar"] button {
 .action-title { font-size:10.5px; font-weight:700; color:var(--text-primary); margin:1px 0 4px 38px; }
 .action-desc { font-size:9.5px; color:var(--text-muted); margin-left:38px; }
 @media (max-width: 900px) { .dash-title { font-size:21px; } .dash-head { display:block; } }
+/* ─── Sidebar Text Only ─────────────────────────────────────────────── */
+section[data-testid="stSidebar"] {
+    color: #ffffff !important;
+}
+
+/* Sidebar navigation */
+section[data-testid="stSidebar"] [data-baseweb="radio"] label,
+section[data-testid="stSidebar"] [data-baseweb="radio"] label p,
+section[data-testid="stSidebar"] [data-baseweb="radio"] span {
+    color: #ffffff !important;
+}
+
+/* Sidebar headings and labels */
+section[data-testid="stSidebar"] .sb-sec,
+section[data-testid="stSidebar"] .sb-brand-title,
+section[data-testid="stSidebar"] .sb-brand-sub,
+section[data-testid="stSidebar"] [data-testid="stNumberInput"] label p {
+    color: #ffffff !important;
+}
+
+/* Sidebar status text */
+section[data-testid="stSidebar"] .sb-status-item,
+section[data-testid="stSidebar"] .sb-status-val {
+    color: #ffffff !important;
+}
+
+/* Sidebar Z-score */
+section[data-testid="stSidebar"] .sb-z-box {
+    color: #ffffff !important;
+}
+
+/* Sidebar buttons */
+section[data-testid="stSidebar"] button {
+    color: #ffffff !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1821,39 +1842,24 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         X_tr, X_te, y_tr, y_te, lstm_scaler = preprocessor.prepare_lstm_data(
             df, sc, seq_length, test_size=0.2
         )
-        #Ensure LSTM inputs are 3D: (samples, sequence_length, features)
-        X_tr=np.asarray(X_tr, dtype=np.float32)
-        X_te=np.asarray(X_te, dtype=np.float32)
+
+        # Ensure LSTM inputs are 3D: (samples, sequence_length, features)
+        X_tr = np.asarray(X_tr, dtype=np.float32)
+        X_te = np.asarray(X_te, dtype=np.float32)
 
         if X_tr.ndim == 2:
             X_tr = X_tr.reshape((X_tr.shape[0], X_tr.shape[1], 1))
         if X_te.ndim == 2:
             X_te = X_te.reshape((X_te.shape[0], X_te.shape[1], 1))
 
-        st.write("LSTM Training Shape:", X_tr.shape)
-        st.write("LSTM Testing Shape:", X_te.shape)
-        
-        lstm_test_start_idx = preprocessor.train_size + seq_length  # First test date index
+        # The first LSTM test target corresponds to the chronological train/test split point.
+        # Keep the Hybrid test range identical so comparison metrics are valid.
+        lstm_test_start_idx = preprocessor.train_size
 
         status_box.info('Training LSTM model...')
         prog.progress(15)
         lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
         lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
-        lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
-        st.write("=== LSTM Debug===")
-        st.write("X_tr:",X_tr.shape, X_tr.shape,X_tr.ndim)
-        st.write("X_te",X_te.shape, X_te.shape,X_te.ndim)
-        st.write("y_tr:",y_tr.shape, y_tr.shape, y_tr.ndim)
-        st.write("y_te:",y_te.shape, y_te.shape, y_te.ndim)
-
-        if X_te.ndim != 3:
-            raise ValueError(f"X_te is wrong before LSTM training: {X_te.shape}")
-
-        if X_te.shape[1:] != (seq_length, 1):
-            raise ValueError(f"X_te has wrong sequence shape: {X_te.shape}. "
-                             f"Expected (*,{seq_length}, 1)"
-                         )
-
         lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
 
         status_box.info('Evaluating LSTM...')
@@ -1896,18 +1902,27 @@ Step 4 — Forecast = ARIMA + XGBoost correction
         )
         best_info = comparator.get_best_model(comp_df, 'RMSE')
 
+        # ALSO fit hybrid on FULL data for forecasting (Bug B4 fix)
+        # The model used for evaluation is trained on train split only.
+        # For forecasting, we need a model trained on ALL available data.
+        status_box.info('Fitting Hybrid model on full dataset for forecasting...')
+        prog.progress(90)
+        hybrid_full = HybridArimaXGBoost(arima_order=arima_tuple)
+        hybrid_full.fit(values)  # Fit on ALL data
+
         prog.progress(100)
         status_box.success('Training complete.')
 
         # Persist
         st.session_state.models_trained   = True
         st.session_state.predictions      = {
-            'lstm':        lstm_preds,
-            'hybrid':      hybrid_preds,
-            'y_test':      y_test_actual,
-            'lstm_obj':    lstm,
-            'hybrid_obj':  hybrid,
-            'comp_df':     comp_df,
+            'lstm':           lstm_preds,
+            'hybrid':         hybrid_preds,
+            'y_test':         y_test_actual,
+            'lstm_obj':       lstm,
+            'hybrid_obj':     hybrid,          # evaluation model (trained on train split)
+            'hybrid_obj_full': hybrid_full,    # forecasting model (trained on full data)
+            'comp_df':        comp_df,
         }
         st.session_state.comparison_df = comp_df
         st.session_state.best_model    = best_info['best_model']
@@ -2079,7 +2094,11 @@ def _page_forecast():
         try:
             preprocessor = st.session_state.preprocessor
             lstm_obj  = st.session_state.predictions.get('lstm_obj')
-            hybrid_obj = st.session_state.predictions.get('hybrid_obj')
+            hybrid_obj = st.session_state.predictions.get('hybrid_obj_full')
+
+            if hybrid_obj is None:
+                # Fallback for backward compatibility
+                hybrid_obj = st.session_state.predictions.get('hybrid_obj')
 
             status.info('Preparing LSTM input sequence...')
             prog.progress(10)
@@ -2094,8 +2113,7 @@ def _page_forecast():
 
             status.info('Generating Hybrid ARIMA+XGBoost forecast...')
             prog.progress(60)
-            # Use the ALREADY-TRAINED hybrid model from evaluation (no silent refit)
-            # This ensures the forecast model matches the evaluated model (Bug B4 fix)
+            # Use the model trained on FULL data for forecasting (Bug B4 fix)
             hybrid_fc = hybrid_obj.forecast_future(steps=forecast_steps)
 
             prog.progress(90)
