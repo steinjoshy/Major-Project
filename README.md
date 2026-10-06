@@ -155,6 +155,8 @@ The launcher script:
    - Select your repository: `your-username/demand-forecasting`
    - Branch: `main`
    - **Main file path**: `dashboard/app.py`
+   - Click **"Advanced settings"**
+   - **Python version**: Select **3.12** (or ensure `runtime.txt` is present at repo root)
    - Click **"Deploy!"**
 
 3. **Configuration** (automatic from `.streamlit/config.toml`)
@@ -163,9 +165,12 @@ The launcher script:
    - CORS/XSRF: disabled for cloud compatibility
    - Theme: configured via config.toml
 
-4. **Python Version**
-   - Streamlit Cloud auto-detects from `pyproject.toml` (`requires-python = ">=3.10,<3.13"`)
-   - Uses Python 3.12 by default (compatible with TensorFlow 2.16+)
+4. **Python Version** (CRITICAL)
+   - **Streamlit Cloud uses `runtime.txt` at the repository root to determine Python version**
+   - This repository includes `runtime.txt` with `python-3.12.11`
+   - **Alternatively**: In the Streamlit Cloud deploy UI, go to Advanced Settings → Python version → select **3.12**
+   - Do NOT use Python 3.13+ (TensorFlow 2.16.2 incompatible)
+   - Do NOT use Python 3.14 (current Streamlit Cloud default - will fail)
 
 ### Important Notes for Cloud Deployment
 
@@ -174,11 +179,11 @@ The launcher script:
 | Entry point | `dashboard/app.py` (configured in deploy UI) |
 | Dependencies | `requirements.txt` at repo root |
 | Config | `.streamlit/config.toml` at repo root |
-| Python version | `pyproject.toml` specifies `>=3.10,<3.13` |
+| **Python version** | `runtime.txt` specifies `python-3.12.11` (or set in Advanced Settings) |
 | Sample data | `data/sample_data/sales_data.csv` included in repo |
 | No Docker/Node.js | Pure Python + Streamlit |
 
-**No additional configuration needed** - the app is ready for Streamlit Community Cloud as-is.
+**The app is ready for Streamlit Community Cloud** - the `runtime.txt` file ensures Python 3.12 is used.
 
 ## 📊 Usage
 
