@@ -15,12 +15,14 @@ class HybridArimaXGBoost:
         Step 2 — Compute ARIMA residuals = Actual − ARIMA_in_sample_fit.
         Step 3 — Train XGBoost on lag features of residuals to learn nonlinear error patterns.
         Step 4 — Hybrid Forecast = ARIMA_forecast + XGBoost_residual_correction.
+
+    Supports both single series and panel data (multiple store/sku combinations).
     """
 
     def __init__(self, arima_order=(1, 1, 1), xgb_params=None, residual_lags=10):
         self.arima_order = arima_order
         self.residual_lags = residual_lags
-        self.arima_model = None       # fitted ARIMAResultsWrapper
+        self.arima_model = None       # fitted ARIMAResultsWrapper (single series)
         self.xgb_model = XGBRegressor(
             n_estimators=100,
             learning_rate=0.05,
@@ -32,8 +34,12 @@ class HybridArimaXGBoost:
         self.residual_scaler = StandardScaler()
         self.arima_fitted = False
         self.xgb_trained = False
-        self._train_data = None       # kept for future-forecast reference
-        self._residuals = None        # ARIMA in-sample residuals
+        self._train_data = None       # kept for future-forecast reference (single series)
+        self._residuals = None        # ARIMA in-sample residuals (single series)
+
+        # Panel data support
+        self._panel_models = {}       # (store_id, sku_id) -> dict with arima_model, xgb_model, etc.
+        self._is_panel = False
 
     # ------------------------------------------------------------------
     # Internals
@@ -217,6 +223,193 @@ class HybridArimaXGBoost:
             'aic': getattr(self.arima_model, 'aic', None),
             'bic': getattr(self.arima_model, 'bic', None),
         }
+
+    # ------------------------------------------------------------------
+    # Panel Data Support
+    # ------------------------------------------------------------------
+
+    def fit_panel(self, panel_data, arima_order=None, verbose=False):
+        """
+        Fit Hybrid model for each (store_id, sku_id) group in panel data.
+
+        Args:
+            panel_data: Dict mapping (store_id, sku_id) -> {
+                'train_series': np.array,
+                'test_series': np.array (optional),
+                'split_idx': int
+            }
+            arima_order: Optional ARIMA order override
+            verbose: Print progress
+
+        Returns:
+            Dict of results per group
+        """
+        self._is_panel = True
+        self._panel_models = {}
+        results = {}
+
+        order = arima_order or self.arima_order
+
+        for (store_id, sku_id), data in panel_data.items():
+            if data.get('skipped', False):
+                results[(store_id, sku_id)] = {
+                    'skipped': True,
+                    'reason': data.get('reason', 'Unknown')
+                }
+                continue
+
+            train_series = data['train_series']
+            test_series = data.get('test_series')
+
+            if len(train_series) < 20:
+                results[(store_id, sku_id)] = {
+                    'skipped': True,
+                    'reason': f'Insufficient training data: {len(train_series)}'
+                }
+                continue
+
+            try:
+                # Fit ARIMA with fallback
+                arima_model = self._fit_arima_with_fallback(train_series, order)
+                arima_fitted = True
+
+                # Compute in-sample residuals
+                _resid = arima_model.resid
+                residuals = _resid.values if hasattr(_resid, 'values') else np.asarray(_resid)
+
+                # Train XGBoost on lagged residuals
+                X_r, y_r = self._create_lag_features(residuals)
+                residual_scaler = StandardScaler()
+                xgb_trained = False
+                xgb_model = None
+
+                if len(X_r) >= 5:
+                    X_r_scaled = residual_scaler.fit_transform(X_r)
+                    xgb_model = XGBRegressor(
+                        n_estimators=100,
+                        learning_rate=0.05,
+                        max_depth=5,
+                        random_state=42,
+                        verbosity=0
+                    )
+                    xgb_model.fit(X_r_scaled, y_r)
+                    xgb_trained = True
+
+                # Store model components
+                self._panel_models[(store_id, sku_id)] = {
+                    'arima_model': arima_model,
+                    'arima_order': self.arima_order,
+                    'residuals': residuals,
+                    'residual_scaler': residual_scaler,
+                    'xgb_model': xgb_model,
+                    'xgb_trained': xgb_trained,
+                    'train_data': train_series
+                }
+
+                # Evaluate on test if provided
+                test_preds = None
+                if test_series is not None and len(test_series) > 0:
+                    test_preds = self._predict_panel_group(
+                        (store_id, sku_id), len(test_series)
+                    )
+
+                results[(store_id, sku_id)] = {
+                    'skipped': False,
+                    'arima_order': self.arima_order,
+                    'xgb_trained': xgb_trained,
+                    'n_train': len(train_series),
+                    'n_test': len(test_series) if test_series is not None else 0,
+                    'test_predictions': test_preds
+                }
+
+                if verbose:
+                    print(f"  Fitted {store_id}-{sku_id}: ARIMA{self.arima_order}, XGB={xgb_trained}")
+
+            except Exception as e:
+                results[(store_id, sku_id)] = {
+                    'skipped': True,
+                    'reason': f'Fitting failed: {str(e)}'
+                }
+                if verbose:
+                    print(f"  Failed {store_id}-{sku_id}: {e}")
+
+        return results
+
+    def _predict_panel_group(self, group_key, steps):
+        """Generate predictions for a single panel group."""
+        model_info = self._panel_models.get(group_key)
+        if model_info is None:
+            return None
+
+        arima_model = model_info['arima_model']
+        xgb_model = model_info['xgb_model']
+        residual_scaler = model_info['residual_scaler']
+        residuals = model_info['residuals']
+        xgb_trained = model_info['xgb_trained']
+
+        # ARIMA forecast
+        _fc = arima_model.get_forecast(steps=steps).predicted_mean
+        arima_forecast = _fc.values if hasattr(_fc, 'values') else np.asarray(_fc)
+
+        # XGBoost correction
+        xgb_corrections = np.zeros(steps)
+        if xgb_trained and xgb_model is not None:
+            residual_window = residuals[-self.residual_lags:].copy()
+            for i in range(steps):
+                if len(residual_window) == self.residual_lags:
+                    try:
+                        corr = xgb_model.predict(
+                            residual_scaler.transform(residual_window.reshape(1, -1))
+                        )[0]
+                        xgb_corrections[i] = corr
+                        residual_window = np.append(residual_window[1:], corr)
+                    except Exception:
+                        xgb_corrections[i] = 0.0
+                else:
+                    xgb_corrections[i] = 0.0
+
+        return arima_forecast + xgb_corrections
+
+    def predict_panel_test(self, panel_data):
+        """
+        Generate test set predictions for all groups in panel data.
+
+        Args:
+            panel_data: Dict mapping (store_id, sku_id) -> {
+                'test_series': np.array
+            }
+
+        Returns:
+            Dict mapping (store_id, sku_id) -> predictions array
+        """
+        if not self._is_panel:
+            raise ValueError("Call fit_panel() first for panel data.")
+
+        predictions = {}
+        for (store_id, sku_id), data in panel_data.items():
+            test_series = data.get('test_series')
+            if test_series is not None and len(test_series) > 0:
+                preds = self._predict_panel_group((store_id, sku_id), len(test_series))
+                predictions[(store_id, sku_id)] = preds
+            else:
+                predictions[(store_id, sku_id)] = np.array([])
+        return predictions
+
+    def forecast_panel_future(self, steps=30):
+        """
+        Generate future forecasts for all fitted panel groups.
+
+        Returns:
+            Dict mapping (store_id, sku_id) -> forecast array of length `steps`
+        """
+        if not self._is_panel:
+            raise ValueError("Call fit_panel() first for panel data.")
+
+        forecasts = {}
+        for group_key, model_info in self._panel_models.items():
+            steps_forecast = self._predict_panel_group(group_key, steps)
+            forecasts[group_key] = steps_forecast
+        return forecasts
 
 
 if __name__ == "__main__":

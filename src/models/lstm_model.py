@@ -206,6 +206,107 @@ class LSTMForecaster:
 
         return future_scaled
 
+    def forecast_future_multiple(self, last_scaled_sequences, steps=30, scalers=None):
+        """
+        Auto-regressively forecast future values for multiple sequences (panel data).
+
+        Args:
+            last_scaled_sequences: Array of shape (n_groups, seq_length) or list of sequences
+            steps: Number of future steps to forecast per sequence
+            scalers: List of scalers (one per group) or single scaler for all
+
+        Returns:
+            Array of shape (n_groups, steps) with forecasts in original scale
+        """
+        if self.model is None:
+            raise ValueError("Model not trained. Call train() first.")
+
+        # Handle both array and list inputs
+        if isinstance(last_scaled_sequences, list):
+            sequences = [np.asarray(s, dtype=np.float32).reshape(-1) for s in last_scaled_sequences]
+        else:
+            sequences = [np.asarray(s, dtype=np.float32).reshape(-1) for s in last_scaled_sequences]
+
+        n_groups = len(sequences)
+
+        if scalers is None:
+            scalers = [None] * n_groups
+        elif not isinstance(scalers, list):
+            scalers = [scalers] * n_groups
+
+        all_forecasts = []
+
+        for i, current_seq in enumerate(sequences):
+            if len(current_seq) != self.seq_length:
+                raise ValueError(
+                    f"Sequence {i} must have length {self.seq_length}, "
+                    f"got {len(current_seq)}"
+                )
+
+            future_scaled = []
+
+            for _ in range(steps):
+                model_input = current_seq.reshape(
+                    1,
+                    self.seq_length,
+                    1,
+                )
+
+                next_value = self.model.predict(
+                    model_input,
+                    verbose=0,
+                )[0, 0]
+
+                future_scaled.append(next_value)
+                current_seq = np.append(current_seq[1:], next_value)
+
+            future_scaled = np.asarray(future_scaled, dtype=np.float32)
+
+            if scalers[i] is not None:
+                future_original = scalers[i].inverse_transform(
+                    future_scaled.reshape(-1, 1)
+                ).flatten()
+            else:
+                future_original = future_scaled
+
+            all_forecasts.append(future_original)
+
+        return np.array(all_forecasts)
+
+    def predict_multiple(self, X_test):
+        """
+        Generate predictions on multiple test sequences (panel data).
+
+        Args:
+            X_test: Array of shape (n_samples, seq_length, 1) or list of arrays
+
+        Returns:
+            Array of predictions
+        """
+        if self.model is None:
+            raise ValueError("Model not trained. Call train() first.")
+
+        if isinstance(X_test, list):
+            X_test = np.concatenate(X_test, axis=0)
+
+        X_test = np.asarray(X_test, dtype=np.float32)
+
+        if X_test.ndim == 2:
+            X_test = X_test[:, :, np.newaxis]
+
+        if X_test.ndim != 3:
+            raise ValueError(
+                f"X_test must be 3D. Received {X_test.shape}"
+            )
+
+        if X_test.shape[1:] != (self.seq_length, 1):
+            raise ValueError(
+                f"Expected X_test shape (*, {self.seq_length}, 1), "
+                f"received {X_test.shape}"
+            )
+
+        return self.model.predict(X_test, verbose=0)
+
     def get_training_history(self):
         """Return training history."""
         if self.history is None:
