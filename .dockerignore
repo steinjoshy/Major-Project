@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+.pytest_cache/
+.coverage
+*.cover
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Project specific
+*.csv~
+*.tmp
+.mypy_cache/
+.ruff_cache/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Data files (large)
+data/
+*.csv
+*.parquet
+*.feather
+*.xlsx
+
+# Model files (large)
+models/
+*.pkl
+*.h5
+*.keras
+*.onnx
+
+# Test files
+tests/
+test_*.py
+conftest.py
+
+# CI/CD
+.github/
+.gitlab/
+*.yml
+*.yaml
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Cloudflare
+wrangler.jsonc
+package.json
+package-lock.json
+node_modules/
+worker/

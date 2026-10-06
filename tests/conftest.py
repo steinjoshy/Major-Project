@@ -1,5 +1,6 @@
 """Pytest configuration and shared fixtures."""
 import sys
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -8,8 +9,29 @@ import pytest
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Suppress specific known warnings for cleaner test output
+warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
+warnings.filterwarnings("ignore", category=UserWarning, module="keras")
+
+# Check TensorFlow availability (may be blocked by Windows AppLocker)
+TF_AVAILABLE = True
+try:
+    import tensorflow as tf
+    _ = tf.__version__
+except Exception as e:
+    # Catch ALL exceptions including SystemError, ImportError, etc.
+    err_str = str(e)
+    if 'DLL load failed' in err_str or 'Application Control policy' in err_str or 'SystemError' in type(e).__name__:
+        TF_AVAILABLE = False
+    else:
+        raise
+
+if TF_AVAILABLE:
+    from src.models.lstm_model import LSTMForecaster
+else:
+    LSTMForecaster = None
+
 from src.models.arima_xgboost import HybridArimaXGBoost
-from src.models.lstm_model import LSTMForecaster
 from src.preprocessing import DataPreprocessor
 
 
@@ -19,6 +41,7 @@ def sample_data():
     df = pd.read_csv(ROOT / "data" / "sample_data" / "sales_data.csv")
     return df
 
+
 @pytest.fixture(scope="session")
 def sample_data_clean():
     """Cleaned sample dataset using DataPreprocessor."""
@@ -26,6 +49,7 @@ def sample_data_clean():
     preprocessor = DataPreprocessor()
     df_clean = preprocessor.clean_data(df, date_col='Date', sales_col='Sales')
     return df_clean, preprocessor
+
 
 @pytest.fixture(scope="session")
 def train_test_split(sample_data_clean):
@@ -37,13 +61,16 @@ def train_test_split(sample_data_clean):
     test_df = df_clean.iloc[split:].copy()
     return train_df, test_df, split
 
+
 @pytest.fixture(scope="session")
 def seq_length():
     return 30
 
+
 @pytest.fixture(scope="session")
 def forecast_steps():
     return 30
+
 
 @pytest.fixture(scope="session")
 def train_data(sample_data_clean):
@@ -51,12 +78,14 @@ def train_data(sample_data_clean):
     df_clean, _ = sample_data_clean
     return df_clean['Sales'].values.astype(float)
 
+
 @pytest.fixture(scope="session")
 def fitted_hybrid(train_data):
     """Pre-fitted Hybrid model for testing."""
     hybrid = HybridArimaXGBoost(arima_order=(1, 1, 1))
     hybrid.fit(train_data[:200])  # Use subset for speed
     return hybrid
+
 
 @pytest.fixture(scope="session")
 def lstm_data(sample_data_clean, seq_length):
@@ -67,23 +96,30 @@ def lstm_data(sample_data_clean, seq_length):
     )
     return X_tr, X_te, y_tr, y_te, preprocessor
 
+
 @pytest.fixture(scope="session")
 def trained_lstm(lstm_data):
     """Pre-trained LSTM model for testing."""
+    if not TF_AVAILABLE:
+        pytest.skip("TensorFlow not available (Windows AppLocker policy)")
     X_tr, X_te, y_tr, y_te, preprocessor = lstm_data
     forecaster = LSTMForecaster(seq_length=30, epochs=2, batch_size=16)
     forecaster.train(X_tr, y_tr, X_te, y_te, verbose=0)
     return forecaster, X_te, y_te, preprocessor
 
+
 @pytest.fixture(scope="session")
 def trained_lstm_for_forecast(sample_data_clean, seq_length):
     """Pre-trained LSTM model on full data for forecasting tests."""
+    if not TF_AVAILABLE:
+        pytest.skip("TensorFlow not available (Windows AppLocker policy)")
     df_clean, preprocessor = sample_data_clean
     # Use legacy method for full-data training (for forecasting tests)
     X, y = preprocessor.prepare_lstm_data_legacy(df_clean, 'Sales', seq_length)
     forecaster = LSTMForecaster(seq_length=seq_length, epochs=2, batch_size=16)
     forecaster.train(X, y, verbose=0)
     return forecaster, preprocessor, df_clean
+
 
 @pytest.fixture
 def pipeline_data():
@@ -113,14 +149,18 @@ def pipeline_data():
         'train_series': train_series, 'test_series': test_series,
     }
 
-# Suppress specific known warnings for cleaner test output
-import warnings
-
-warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
-warnings.filterwarnings("ignore", category=UserWarning, module="keras")
 
 @pytest.fixture(scope="session")
 def service():
     """Create IngestionService instance for testing."""
     from src.services.ingestion_service import IngestionService
     return IngestionService(use_duckdb=False, min_rows_lstm=50)
+
+
+# Auto-skip TensorFlow-dependent tests if TF not available
+def pytest_collection_modifyitems(config, items):
+    if not TF_AVAILABLE:
+        skip_tf = pytest.mark.skip(reason="TensorFlow not available (Windows AppLocker policy)")
+        for item in items:
+            if "lstm" in item.nodeid.lower() or "trained_lstm" in item.nodeid:
+                item.add_marker(skip_tf)
