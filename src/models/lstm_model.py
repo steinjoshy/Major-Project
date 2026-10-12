@@ -1,8 +1,47 @@
+import logging
+import time
+
 import numpy as np
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.callbacks import Callback, EarlyStopping
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
+
+logger = logging.getLogger(__name__)
+
+
+class _ProgressLogger(Callback):
+    """Keras callback that logs each epoch and forwards progress to a callback.
+
+    Kept deliberately small so training can report progress to the UI without
+    changing the model architecture or the training loop semantics.
+    """
+
+    def __init__(self, total_epochs, log_every=5, progress_callback=None):
+        super().__init__()
+        self.total_epochs = total_epochs
+        self.log_every = log_every
+        self.progress_callback = progress_callback
+        self.started = time.perf_counter()
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        done = epoch + 1
+        loss = logs.get("loss")
+        val_loss = logs.get("val_loss")
+        if (self.log_every and done % self.log_every == 0) or done == self.total_epochs:
+            logger.info(
+                "LSTM epoch %d/%d loss=%s val_loss=%s (%.1fs)",
+                done, self.total_epochs,
+                f"{loss:.5f}" if loss is not None else "n/a",
+                f"{val_loss:.5f}" if val_loss is not None else "n/a",
+                time.perf_counter() - self.started,
+            )
+        if self.progress_callback is not None:
+            try:
+                self.progress_callback(done, self.total_epochs)
+            except Exception:
+                logger.debug("LSTM progress_callback failed", exc_info=True)
 
 
 class LSTMForecaster:
@@ -25,10 +64,10 @@ class LSTMForecaster:
     def build_model(self, input_shape):
         """Build and compile the LSTM neural network."""
         model = Sequential([
+            Input(shape=input_shape),
             LSTM(
                 self.lstm_units,
                 activation="tanh",
-                input_shape=input_shape,
                 return_sequences=True,
             ),
             Dropout(0.2),
@@ -47,7 +86,8 @@ class LSTMForecaster:
         self.model = model
         return model
 
-    def train(self, X_train, y_train, X_val=None, y_val=None, verbose=0):
+    def train(self, X_train, y_train, X_val=None, y_val=None, verbose=0,
+              progress_callback=None, log_every=5):
         """Train the LSTM model."""
 
         X_train = np.asarray(X_train, dtype=np.float32)
@@ -108,6 +148,11 @@ class LSTMForecaster:
         monitor = "val_loss" if validation_data is not None else "loss"
 
         callbacks = [
+            _ProgressLogger(
+                total_epochs=self.epochs,
+                log_every=log_every,
+                progress_callback=progress_callback,
+            ),
             EarlyStopping(
                 monitor=monitor,
                 patience=8,
@@ -125,10 +170,20 @@ class LSTMForecaster:
         if validation_data is not None:
             fit_kwargs["validation_data"] = validation_data
 
+        logger.info(
+            "Training LSTM: samples=%d, seq_length=%d, max_epochs=%d, batch_size=%d",
+            len(X_train), self.seq_length, self.epochs, self.batch_size,
+        )
+        started = time.perf_counter()
         self.history = self.model.fit(
             X_train,
             y_train,
             **fit_kwargs,
+        )
+        logger.info(
+            "LSTM training complete: %d epochs in %.1fs",
+            len(self.history.history.get("loss", [])),
+            time.perf_counter() - started,
         )
 
         return self.history
