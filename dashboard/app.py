@@ -1985,7 +1985,8 @@ Step 4 - Forecast = ARIMA + XGBoost correction
                 preprocessor=preprocessor,
                 progress_callback=_panel_progress,
             )
-
+            print("DEBUG 1: Panel training returned", flush=True)
+            print("DEBUG 2: Retrieving test predictions", flush=True)
             status_box.info('Evaluating models on validation set...')
             prog.progress(70, text='Evaluating models on validation set...')
 
