@@ -17,6 +17,11 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+try:
+    import snowflake.connector
+    SNOWFLAKE_AVAILABLE = True
+except ImportError:
+    SNOWFLAKE_AVAILABLE = False
 
 # ── Path Setup ────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).parent.parent
