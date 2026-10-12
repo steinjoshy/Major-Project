@@ -40,6 +40,50 @@ try:
 except ImportError:
     DUCKDB_AVAILABLE = False
 
+# ── Snowflake Connection ──────────────────────────────────────────────────────
+
+def get_snowflake_connection():
+    """Connect to Snowflake using Streamlit secrets."""
+    if not SNOWFLAKE_AVAILABLE:
+        raise ImportError(
+            "Snowflake connector is missing. "
+            "Add snowflake-connector-python to requirements.txt."
+        )
+
+    if "snowflake" not in st.secrets:
+        raise RuntimeError(
+            "Snowflake credentials are not configured in Streamlit Secrets."
+        )
+
+    cfg = st.secrets["snowflake"]
+
+    return snowflake.connector.connect(
+        account=cfg["account"],
+        user=cfg["user"],
+        password=cfg["password"],
+        warehouse=cfg["warehouse"],
+        database=cfg["database"],
+        schema=cfg["schema"],
+        role=cfg["role"],
+    )
+
+
+def test_snowflake_connection():
+    """Check Snowflake access to the demand history table."""
+    conn = get_snowflake_connection()
+    try:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM DEMAND_FORECASTING_DB.PUBLIC.DEMAND_HISTORY
+            """)
+            return cursor.fetchone()[0]
+        finally:
+            cursor.close()
+    finally:
+        conn.close()
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 # Emit per-model / per-stage timing logs for the forecasting pipeline to the
 # terminal without changing global logging or other libraries' verbosity.
