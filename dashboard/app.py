@@ -2086,6 +2086,8 @@ Step 4 - Forecast = ARIMA + XGBoost correction
                 {'LSTM': lstm_preds, 'Hybrid ARIMA+XGBoost': hybrid_preds}
             )
             best_info = comparator.get_best_model(comp_df, 'RMSE')
+            
+            print("DEBUG 5: Model comparison completed", flush=True)
 
             status_box.info('Fitting Hybrid model on full dataset for forecasting...')
             prog.progress(90)
