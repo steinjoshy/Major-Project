@@ -925,7 +925,16 @@ with st.sidebar:
     st.number_input('Look-back (days)', 10, 60, key='seq_length',     step=1)
 
     st.markdown('<hr>', unsafe_allow_html=True)
-
+    # ── Snowflake Connection Test ─────────────────────────────────────────
+    if st.button("Test Snowflake Connection", use_container_width=True):
+        try:
+            row_count = test_snowflake_connection()
+            st.success(
+                f"Snowflake connected successfully! "
+                f"DEMAND_HISTORY contains {row_count:,} rows."
+            )
+        except Exception as e:
+            st.error(f"Snowflake connection failed: {e}")
     # ── Run Analysis button ───────────────────────────────────────────────────
     if st.button('Run Analysis', type='primary', use_container_width=True):
         if st.session_state.data is None:
