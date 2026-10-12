@@ -1992,6 +1992,16 @@ Step 4 - Forecast = ARIMA + XGBoost correction
 
             # Get test predictions from service
             test_preds = service.get_test_predictions()
+            
+            print("DEBUG 3: Test predictions retrieved", flush=True)
+            print(
+                "DEBUG 4: Prediction lengths:",
+                len(test_preds.get('LSTM', [])),
+                len(test_preds.get('Hybrid ARIMA+XGBoost', [])),
+                len(test_preds.get('y_test', [])),
+                flush=True,
+            )
+
             lstm_preds = test_preds.get('LSTM', np.array([]))
             hybrid_preds = test_preds.get('Hybrid ARIMA+XGBoost', np.array([]))
             y_test_actual = test_preds.get('y_test', np.array([]))
