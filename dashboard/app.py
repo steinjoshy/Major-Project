@@ -7,6 +7,7 @@ Pages: Dashboard | Data | EDA | Train Models | Model Comparison |
 """
 
 import io
+import logging
 import os
 import sys
 import tempfile
@@ -34,6 +35,18 @@ try:
 except ImportError:
     DUCKDB_AVAILABLE = False
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Emit per-model / per-stage timing logs for the forecasting pipeline to the
+# terminal without changing global logging or other libraries' verbosity.
+_src_logger = logging.getLogger('src')
+_src_logger.setLevel(logging.INFO)
+if not _src_logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+    _src_logger.addHandler(_handler)
+    _src_logger.propagate = False
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
 # ══════════════════════════════════════════════════════════════════════════════
@@ -49,6 +62,7 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 /* ─── Design Tokens ────────────────────────────────────────────────────── */
 :root {
     --primary:         #1e40af;
@@ -63,9 +77,9 @@ st.markdown("""
     --danger:          #dc2626;
     --danger-bg:       #fee2e2;
     --text-primary:    #0f172a;
-    --text-secondary:  #334155;
-    --text-muted:      #64748b;
-    --text-subtle:     #94a3b8;
+    --text-secondary:  #1e293b;
+    --text-muted:      #475569;
+    --text-subtle:     #64748b;
     --border:          #e2e8f0;
     --border-strong:   #cbd5e1;
     --surface:         #ffffff;
@@ -80,9 +94,13 @@ st.markdown("""
 }
 
 /* ─── Global ────────────────────────────────────────────────────────────── */
-.stApp { background: var(--bg) !important; }
+.stApp {
+    background: var(--bg) !important;
+    font-size: 15px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+}
 .block-container {
-    padding: 1.6rem 2rem 2rem 2rem !important;
+    padding: 1.8rem 2.2rem 2.2rem 2.2rem !important;
     max-width: 100% !important;
 }
 *, *::before, *::after {
@@ -92,10 +110,10 @@ st.markdown("""
 
 /* ─── Sidebar Shell ─────────────────────────────────────────────────────── */
 section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0f172a 0%, #111827 100%) !important;
+    background: #0f172a !important;
     border-right: 1px solid #1e293b !important;
-    min-width: 226px !important;
-    max-width: 246px !important;
+    min-width: 242px !important;
+    max-width: 268px !important;
 }
 section[data-testid="stSidebar"] > div { padding: 0 !important; }
 section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
@@ -118,20 +136,20 @@ section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
     border-radius: 6px;
 }
 .sb-brand-title {
-    font-size: 13.5px; font-weight: 700; color: #f1f5f9;
+    font-size: 17px; font-weight: 700; color: #f8fafc !important;
     letter-spacing: -0.2px;
 }
 .sb-brand-sub {
-    font-size: 10px; color: #475569;
+    font-size: 14px; color: #94a3b8 !important;
     margin: 6px 0 0 35px;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
 }
 
 /* ─── Sidebar Section Label ─────────────────────────────────────────────── */
 .sb-sec {
-    font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px;
-    text-transform: uppercase; color: #334155;
-    padding: 14px 4px 5px 4px;
+    font-size: 13.5px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: #94a3b8 !important;
+    padding: 16px 4px 6px 4px;
     display: block;
 }
 
@@ -166,11 +184,11 @@ section[data-testid="stSidebar"] [data-baseweb="radio"] > div:first-child {
 /* Label */
 section[data-testid="stSidebar"] [data-baseweb="radio"] label {
     cursor: pointer !important;
-    padding: 8px 10px !important;
+    padding: 9px 12px !important;
     width: 100% !important;
     display: block !important;
     color: #cbd5e1 !important;
-    font-size: 13px !important;
+    font-size: 15.5px !important;
     font-weight: 500 !important;
     border-radius: 6px !important;
     transition: color 0.14s, background 0.14s !important;
@@ -190,21 +208,20 @@ section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] lab
 
 /* ─── Sidebar Number Inputs ─────────────────────────────────────────────── */
 section[data-testid="stSidebar"] [data-testid="stNumberInput"] label p {
-    font-size: 10.5px !important; color: #475569 !important;
-    font-weight: 600 !important; text-transform: uppercase !important;
-    letter-spacing: 0.5px !important;
+    font-size: 14px !important; color: #cbd5e1 !important;
+    font-weight: 500 !important; letter-spacing: 0.1px !important;
 }
 section[data-testid="stSidebar"] [data-testid="stNumberInput"] input {
     background: #1e293b !important; border: 1px solid #334155 !important;
-    color: #e2e8f0 !important; border-radius: 5px !important;
-    font-size: 13px !important;
+    color: #f1f5f9 !important; border-radius: 5px !important;
+    font-size: 15px !important;
 }
 section[data-testid="stSidebar"] [data-testid="stNumberInput"] input:focus {
-    border-color: #1e40af !important; outline: none !important;
+    border-color: #3b82f6 !important; outline: none !important;
 }
 section[data-testid="stSidebar"] button {
     background: #1e293b !important; border-color: #334155 !important;
-    color: #64748b !important;
+    color: #cbd5e1 !important;
 }
 
 /* ─── Sidebar Status ────────────────────────────────────────────────────── */
@@ -215,35 +232,35 @@ section[data-testid="stSidebar"] button {
 }
 .sb-status-item {
     display: flex; align-items: center; gap: 8px;
-    font-size: 11px; color: #475569;
-    padding: 2px 0;
+    font-size: 14px; color: #94a3b8 !important;
+    padding: 3px 0;
 }
-.sb-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.sb-dot-on  { background: #059669; box-shadow: 0 0 4px rgba(5,150,105,0.5); }
-.sb-dot-off { background: #334155; }
-.sb-dot-warn { background: #d97706; }
-.sb-status-val { color: #cbd5e1; font-weight: 600; }
+.sb-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sb-dot-on  { background: #10b981; }
+.sb-dot-off { background: #475569; }
+.sb-dot-warn { background: #f59e0b; }
+.sb-status-val { color: #e2e8f0 !important; font-weight: 600; }
 
 /* ─── Sidebar Z-Score Box ─────────────────────────────────────────────────── */
 .sb-z-box {
     font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace !important;
-    font-size: 13px; font-weight: 700; color: #93c5fd;
+    font-size: 16px; font-weight: 700; color: #93c5fd;
     background: #1e293b; border: 1px solid #334155;
-    border-radius: 5px; padding: 4px 8px; display: inline-block;
+    border-radius: 5px; padding: 6px 10px; display: inline-block;
 }
 
 /* ─── Page Header ───────────────────────────────────────────────────────── */
-.ph { padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 22px; }
-.ph-title { font-size: 20px; font-weight: 700; color: var(--text-primary);
-             letter-spacing: -0.4px; margin: 0 0 3px 0; }
-.ph-sub   { font-size: 13px; color: var(--text-muted); margin: 0; }
+.ph { padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.ph-title { font-size: 30px; font-weight: 800; color: var(--text-primary);
+             letter-spacing: -0.6px; line-height: 1.2; margin: 0 0 5px 0; }
+.ph-sub   { font-size: 15px; color: var(--text-muted); margin: 0; line-height: 1.4; }
 
 /* ─── Section Label ─────────────────────────────────────────────────────── */
 .sec-lbl {
-    font-size: 10px; font-weight: 700; letter-spacing: 1px;
-    text-transform: uppercase; color: var(--text-muted);
-    margin: 0 0 10px 0; padding-left: 8px;
-    border-left: 3px solid var(--primary);
+    font-size: 19px; font-weight: 700; letter-spacing: -0.2px;
+    color: var(--text-primary);
+    margin: 0 0 14px 0; padding-left: 12px;
+    border-left: 4px solid var(--primary);
 }
 
 /* ─── Cards ─────────────────────────────────────────────────────────────── */
@@ -255,23 +272,24 @@ section[data-testid="stSidebar"] button {
 /* ─── KPI Cards ─────────────────────────────────────────────────────────── */
 .kpi {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 15px 18px; box-shadow: var(--shadow);
+    border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow);
+    min-height: 116px;
     transition: box-shadow 0.2s, border-color 0.2s;
 }
 .kpi:hover { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
-.kpi-lbl  { font-size: 9.5px; font-weight: 700; letter-spacing: 0.8px;
-             text-transform: uppercase; color: var(--text-muted); margin: 0 0 7px 0; }
-.kpi-val  { font-size: 22px; font-weight: 700; color: var(--text-primary);
-             letter-spacing: -0.6px; margin: 0 0 4px 0; line-height: 1.1; }
-.kpi-sub  { font-size: 11px; color: var(--text-subtle); margin: 0; }
+.kpi-lbl  { font-size: 14px; font-weight: 600; letter-spacing: 0;
+             color: var(--text-muted); margin: 0 0 8px 0; }
+.kpi-val  { font-size: 30px; font-weight: 800; color: var(--text-primary);
+             letter-spacing: -0.8px; margin: 0 0 5px 0; line-height: 1.1; }
+.kpi-sub  { font-size: 14px; color: var(--text-muted); margin: 0; }
 .kpi-blue .kpi-val { color: var(--primary); }
 .kpi-green .kpi-val { color: var(--success); }
 
 /* ─── Badges ────────────────────────────────────────────────────────────── */
 .bdg {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 9px; border-radius: 999px;
-    font-size: 11px; font-weight: 600; white-space: nowrap;
+    padding: 3px 11px; border-radius: 999px;
+    font-size: 13.5px; font-weight: 600; white-space: nowrap;
 }
 .bdg-ok   { background: var(--success-bg); color: var(--success); }
 .bdg-warn { background: var(--warning-bg); color: var(--warning); }
@@ -282,12 +300,12 @@ section[data-testid="stSidebar"] button {
 /* ─── Quality Rows ──────────────────────────────────────────────────────── */
 .qr {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 9px 0; border-bottom: 1px solid var(--border);
-    font-size: 13px;
+    padding: 11px 0; border-bottom: 1px solid var(--border);
+    font-size: 15px;
 }
 .qr:last-child { border-bottom: none; }
 .qr-name { color: var(--text-secondary); }
-.qr-detail { font-size: 11px; color: var(--text-subtle); margin-left: 8px; }
+.qr-detail { font-size: 14px; color: var(--text-muted); margin-left: 8px; }
 
 /* ─── Model Cards ───────────────────────────────────────────────────────── */
 .mc {
@@ -295,14 +313,14 @@ section[data-testid="stSidebar"] button {
     border-radius: var(--radius-lg); padding: 22px 22px;
     box-shadow: var(--shadow); height: 100%;
 }
-.mc-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0 0 3px 0; }
-.mc-sub   { font-size: 12px; color: var(--text-muted); margin: 0 0 16px 0; }
+.mc-title { font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0 0 3px 0; }
+.mc-sub   { font-size: 14px; color: var(--text-muted); margin: 0 0 16px 0; }
 .mc-arch  {
     background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 10px 12px;
-    font-size: 11px; color: var(--text-muted);
+    border-radius: var(--radius-sm); padding: 12px 14px;
+    font-size: 14px; color: var(--text-secondary);
     font-family: "JetBrains Mono","Fira Code","Consolas",monospace !important;
-    line-height: 1.75; margin: 0 0 14px 0;
+    line-height: 1.8; margin: 0 0 14px 0;
 }
 
 /* ─── Empty State ───────────────────────────────────────────────────────── */
@@ -312,9 +330,9 @@ section[data-testid="stSidebar"] button {
     border: 1.5px dashed var(--border-strong);
     border-radius: var(--radius-lg);
 }
-.es-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin: 0 0 8px 0; }
-.es-sub   { font-size: 13px; color: var(--text-muted); margin: 0 0 22px 0;
-             max-width: 360px; margin-left: auto; margin-right: auto; }
+.es-title { font-size: 20px; font-weight: 700; color: var(--text-secondary); margin: 0 0 8px 0; }
+.es-sub   { font-size: 15px; color: var(--text-muted); margin: 0 0 22px 0;
+             max-width: 420px; margin-left: auto; margin-right: auto; }
 
 /* ─── Best Model Banner ─────────────────────────────────────────────────── */
 .best-banner {
@@ -322,10 +340,10 @@ section[data-testid="stSidebar"] button {
     border: 1px solid #6ee7b7; border-radius: var(--radius-lg);
     padding: 18px 22px; margin-bottom: 20px;
 }
-.best-banner-label { font-size: 9.5px; font-weight: 700; letter-spacing: 1px;
-                      text-transform: uppercase; color: #059669; margin: 0 0 5px 0; }
-.best-banner-model { font-size: 19px; font-weight: 700; color: #065f46; margin: 0 0 4px 0; }
-.best-banner-sub   { font-size: 12px; color: #047857; margin: 0; }
+.best-banner-label { font-size: 14px; font-weight: 700; letter-spacing: 0.4px;
+                      text-transform: uppercase; color: #059669; margin: 0 0 6px 0; }
+.best-banner-model { font-size: 26px; font-weight: 800; color: #065f46; margin: 0 0 5px 0; letter-spacing: -0.4px; }
+.best-banner-sub   { font-size: 15px; color: #047857; margin: 0; }
 
 /* ─── Plotly Chart Wrapper ──────────────────────────────────────────────── */
 [data-testid="stPlotlyChart"] {
@@ -344,20 +362,20 @@ section[data-testid="stSidebar"] button {
     box-shadow: var(--shadow) !important;
 }
 [data-testid="stMetricLabel"] p {
-    font-size: 10px !important; font-weight: 700 !important;
-    letter-spacing: 0.7px !important; text-transform: uppercase !important;
+    font-size: 14px !important; font-weight: 600 !important;
+    letter-spacing: 0 !important;
     color: var(--text-muted) !important;
 }
 [data-testid="stMetricValue"] {
-    font-size: 20px !important; font-weight: 700 !important;
-    color: var(--text-primary) !important; letter-spacing: -0.4px !important;
+    font-size: 28px !important; font-weight: 800 !important;
+    color: var(--text-primary) !important; letter-spacing: -0.6px !important;
 }
 
 /* ─── Buttons ───────────────────────────────────────────────────────────── */
 .stButton > button[kind="primary"] {
     background: var(--primary) !important; border: none !important;
     border-radius: var(--radius-sm) !important; font-weight: 600 !important;
-    font-size: 13.5px !important; padding: 8px 22px !important;
+    font-size: 15px !important; padding: 10px 24px !important; min-height: 44px !important;
     color: #fff !important; box-shadow: 0 1px 3px rgba(30,64,175,0.3) !important;
     transition: background 0.15s, transform 0.1s !important;
 }
@@ -365,8 +383,8 @@ section[data-testid="stSidebar"] button {
     background: var(--primary-hover) !important; transform: translateY(-1px) !important;
 }
 .stButton > button:not([kind="primary"]) {
-    border: 1px solid var(--border) !important; border-radius: var(--radius-sm) !important;
-    font-size: 13px !important; font-weight: 500 !important;
+    border: 1px solid var(--border-strong) !important; border-radius: var(--radius-sm) !important;
+    font-size: 15px !important; font-weight: 500 !important; min-height: 44px !important;
     color: var(--text-secondary) !important; background: var(--surface) !important;
     transition: border-color 0.15s, color 0.15s !important;
 }
@@ -376,8 +394,8 @@ section[data-testid="stSidebar"] button {
 
 /* ─── Download Button ───────────────────────────────────────────────────── */
 [data-testid="stDownloadButton"] > button {
-    border: 1px solid var(--border) !important; border-radius: var(--radius-sm) !important;
-    font-size: 13px !important; font-weight: 500 !important;
+    border: 1px solid var(--border-strong) !important; border-radius: var(--radius-sm) !important;
+    font-size: 15px !important; font-weight: 500 !important; min-height: 44px !important;
     background: var(--surface) !important; color: var(--text-secondary) !important;
     transition: border-color 0.15s, color 0.15s !important;
 }
@@ -390,8 +408,16 @@ section[data-testid="stSidebar"] button {
 [data-testid="stNumberInput"] input,
 [data-testid="stSelectbox"] > div {
     border-radius: var(--radius-sm) !important;
-    font-size: 13px !important;
+    font-size: 15px !important;
     transition: border-color 0.15s !important;
+}
+/* Form / widget labels (main workspace) */
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label,
+[data-testid="stWidgetLabel"] span {
+    font-size: 15px !important; font-weight: 500 !important;
+    color: var(--text-secondary) !important;
 }
 [data-testid="stTextInput"] input:focus,
 [data-testid="stNumberInput"] input:focus {
@@ -407,7 +433,7 @@ section[data-testid="stSidebar"] button {
     box-shadow: var(--shadow-sm) !important;
 }
 [data-testid="stExpander"] summary {
-    font-size: 13px !important; font-weight: 600 !important;
+    font-size: 15px !important; font-weight: 600 !important;
     color: var(--text-secondary) !important;
 }
 
@@ -417,8 +443,8 @@ section[data-testid="stSidebar"] button {
     border-radius: var(--radius); padding: 3px; gap: 2px;
 }
 [data-testid="stTabs"] [role="tab"] {
-    font-size: 12.5px; font-weight: 500; color: var(--text-muted);
-    border-radius: var(--radius-sm); padding: 5px 16px;
+    font-size: 14.5px; font-weight: 500; color: var(--text-muted);
+    border-radius: var(--radius-sm); padding: 7px 18px;
     border: none !important; transition: color 0.15s;
 }
 [data-testid="stTabs"] [role="tab"]:hover { color: var(--primary); }
@@ -439,7 +465,7 @@ section[data-testid="stSidebar"] button {
 [data-testid="stProgress"] > div { background: var(--border) !important; border-radius: 999px !important; }
 
 /* ─── Alert ─────────────────────────────────────────────────────────────── */
-[data-testid="stAlert"] { border-radius: var(--radius-sm) !important; font-size: 13px !important; }
+[data-testid="stAlert"] { border-radius: var(--radius-sm) !important; font-size: 15px !important; }
 
 /* ─── Scrollbar ─────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -448,13 +474,13 @@ section[data-testid="stSidebar"] button {
 
 /* ─── Footer ────────────────────────────────────────────────────────────── */
 .app-footer {
-    text-align: center; font-size: 11px; color: var(--text-subtle);
-    padding: 20px 0 6px 0; border-top: 1px solid var(--border); margin-top: 32px;
+    text-align: center; font-size: 14px; color: var(--text-muted);
+    padding: 22px 0 8px 0; border-top: 1px solid var(--border); margin-top: 32px;
 }
 
 /* ─── Dataset Info Table ────────────────────────────────────────────────── */
-.info-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.info-tbl td { padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.info-tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
+.info-tbl td { padding: 10px 4px; border-bottom: 1px solid var(--border); }
 .info-tbl td:first-child { color: var(--text-muted); width: 44%; }
 .info-tbl td:last-child  { color: var(--text-primary); font-weight: 500; }
 .info-tbl tr:last-child td { border-bottom: none; }
@@ -467,91 +493,63 @@ section[data-testid="stSidebar"] button {
 }
 .inv-card-primary { border-color: #6ee7b7; background: linear-gradient(135deg,#ecfdf5,#f0fdf4); }
 .inv-card-secondary { border-color: #a5b4fc; background: linear-gradient(135deg,#eef2ff,#f5f3ff); }
-.inv-card-lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.9px;
-                 text-transform: uppercase; margin: 0 0 8px 0; }
+.inv-card-lbl { font-size: 14px; font-weight: 700; letter-spacing: 0.4px;
+                 text-transform: uppercase; margin: 0 0 10px 0; }
 .inv-card-primary .inv-card-lbl  { color: #059669; }
 .inv-card-secondary .inv-card-lbl { color: #4f46e5; }
-.inv-card-val { font-size: 30px; font-weight: 700; letter-spacing: -1px; margin: 0 0 4px 0; }
+.inv-card-val { font-size: 32px; font-weight: 800; letter-spacing: -1px; margin: 0 0 5px 0; }
 .inv-card-primary .inv-card-val  { color: #065f46; }
 .inv-card-secondary .inv-card-val { color: #3730a3; }
-.inv-card-sub { font-size: 11.5px; margin: 0; }
+.inv-card-sub { font-size: 14px; margin: 0; }
 .inv-card-primary .inv-card-sub  { color: #047857; }
 .inv-card-secondary .inv-card-sub { color: #4338ca; }
 
-/* Dashboard reference layout */
-.dash-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
-             padding: 0 0 16px; margin-bottom:18px; border-bottom:1px solid var(--border); }
-.dash-title { font-size:25px; line-height:1.2; font-weight:750; letter-spacing:-.65px;
-              color:var(--text-primary); margin:0 0 5px; }
-.dash-sub { font-size:12.5px; color:var(--text-muted); margin:0; }
-.dash-panel { background:var(--surface); border:1px solid var(--border); border-radius:10px;
-              padding:15px; box-shadow:var(--shadow); height:100%; }
-.dash-panel-title { font-size:12px; font-weight:700; color:var(--text-primary); margin:0 0 13px; }
-.dash-kpi { position:relative; min-height:100px; padding:15px 16px; }
-.dash-kpi .kpi-lbl { text-transform:none; letter-spacing:0; font-size:10.5px; margin-bottom:8px; }
-.dash-kpi .kpi-val { font-size:20px; }
-.dash-kpi-icon { position:absolute; right:15px; top:16px; display:grid; place-items:center; width:34px; height:34px;
-                 border-radius:8px; font-size:18px; background:#eff6ff; color:#2563eb; }
-.dash-kpi-icon.green { background:#ecfdf5; color:#059669; }
-.dash-kpi-icon.violet { background:#f5f3ff; color:#7c3aed; }
-.dash-kpi-icon.orange { background:#fff7ed; color:#ea580c; }
-.quality-item { display:flex; gap:10px; align-items:center; min-height:44px; padding:8px 10px;
-                border:1px solid #e1f0e8; border-radius:8px; background:linear-gradient(90deg,#f0fdf4,#f8fafc); }
-.quality-icon { color:#059669; font-weight:700; font-size:17px; width:20px; text-align:center; }
-.quality-name { font-size:10.5px; font-weight:650; line-height:1.2; color:var(--text-primary); }
-.quality-detail { font-size:9.5px; color:var(--text-muted); margin-top:2px; }
-.dash-table { width:100%; border-collapse:collapse; font-size:10.5px; }
-.dash-table th { background:#f8fafc; color:var(--text-secondary); font-size:9px; text-align:left; padding:7px 6px;
-                 border-bottom:1px solid var(--border); }
-.dash-table td { padding:8px 6px; color:var(--text-secondary); border-bottom:1px solid #f1f5f9; }
-.dash-table tr:last-child td { border-bottom:0; }
-.dash-table .val { text-align:right; font-weight:650; color:var(--text-primary); }
-.dash-bar { display:inline-block; width:46px; height:4px; margin-right:4px; vertical-align:middle; border-radius:8px;
-            background:linear-gradient(90deg,#2563eb var(--value),#e2e8f0 var(--value)); }
-.action-card { min-height:74px; padding:12px; border:1px solid #dbeafe; border-radius:8px;
-               background:linear-gradient(135deg,#f8fbff,#f1f7ff); }
-.action-card.green { border-color:#d9f1e3; background:linear-gradient(135deg,#f7fdf9,#f0fdf4); }
-.action-card.violet { border-color:#e9ddff; background:linear-gradient(135deg,#fcfaff,#f7f3ff); }
-.action-icon { float:left; width:31px; font-size:21px; color:#2563eb; line-height:37px; }
-.action-card.green .action-icon { color:#059669; }
-.action-card.violet .action-icon { color:#7c3aed; }
-.action-title { font-size:10.5px; font-weight:700; color:var(--text-primary); margin:1px 0 4px 38px; }
-.action-desc { font-size:9.5px; color:var(--text-muted); margin-left:38px; }
-@media (max-width: 900px) { .dash-title { font-size:21px; } .dash-head { display:block; } }
-/* ─── Sidebar Text Only ─────────────────────────────────────────────── */
-section[data-testid="stSidebar"] {
-    color: #ffffff !important;
-}
-
-/* Sidebar navigation */
+/* ─── Sidebar Navigation Contrast (consolidated) ────────────────────────── */
 section[data-testid="stSidebar"] [data-baseweb="radio"] label,
-section[data-testid="stSidebar"] [data-baseweb="radio"] label p,
-section[data-testid="stSidebar"] [data-baseweb="radio"] span {
-    color: #ffffff !important;
+section[data-testid="stSidebar"] [data-baseweb="radio"] label * {
+    color: inherit !important;
+}
+section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label,
+section[data-testid="stSidebar"] [data-baseweb="radio"][aria-checked="true"] label * {
+    color: #93c5fd !important;
+}
+/* Sidebar form labels wrap in Streamlit's widget label wrapper */
+section[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] label,
+section[data-testid="stSidebar"] [data-testid="stWidgetLabel"] span {
+    color: #cbd5e1 !important;
 }
 
-/* Sidebar headings and labels */
-section[data-testid="stSidebar"] .sb-sec,
-section[data-testid="stSidebar"] .sb-brand-title,
-section[data-testid="stSidebar"] .sb-brand-sub,
-section[data-testid="stSidebar"] [data-testid="stNumberInput"] label p {
-    color: #ffffff !important;
+/* FIX: Force readable sidebar text */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] a {
+    color: #f8fafc !important;
 }
 
-/* Sidebar status text */
-section[data-testid="stSidebar"] .sb-status-item,
-section[data-testid="stSidebar"] .sb-status-val {
-    color: #ffffff !important;
+/* Keep sidebar form controls readable */
+section[data-testid="stSidebar"] input,
+section[data-testid="stSidebar"] textarea {
+    color: #f8fafc !important;
 }
 
-/* Sidebar Z-score */
-section[data-testid="stSidebar"] .sb-z-box {
-    color: #ffffff !important;
+/* ─── Responsive Typography ─────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    .ph-title { font-size: 26px; }
+    .sec-lbl  { font-size: 18px; }
+    .kpi-val  { font-size: 26px; }
 }
-
-/* Sidebar buttons */
-section[data-testid="stSidebar"] button {
-    color: #ffffff !important;
+@media (max-width: 900px) {
+    .block-container { padding: 1.1rem 1rem 1.5rem 1rem !important; }
+    .ph-title { font-size: 23px; }
+    .kpi-val  { font-size: 23px; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -753,16 +751,17 @@ def _cl(**kw):
     """Return a professional Plotly layout dict."""
     base = dict(
         template='plotly_white',
-        font=dict(family='Inter, Segoe UI, system-ui, sans-serif', size=12, color='#0f172a'),
+        font=dict(family='Inter, Segoe UI, system-ui, sans-serif', size=14, color='#0f172a'),
         paper_bgcolor='white', plot_bgcolor='white',
-        margin=dict(l=14, r=14, t=38, b=14),
-        hoverlabel=dict(bgcolor='white', bordercolor='#e2e8f0', font_size=12, font_family='Inter, sans-serif'),
+        margin=dict(l=16, r=16, t=52, b=16),
+        title=dict(font=dict(size=17), x=0, xanchor='left', y=0.97, yanchor='top'),
+        hoverlabel=dict(bgcolor='white', bordercolor='#cbd5e1', font_size=13.5, font_family='Inter, sans-serif'),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
-                    font=dict(size=11), bgcolor='rgba(255,255,255,0)'),
-        xaxis=dict(showgrid=False, showline=True, linecolor='#e2e8f0', linewidth=1,
-                   tickfont=dict(size=11), zeroline=False),
-        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', gridwidth=1,
-                   showline=False, zeroline=False, tickfont=dict(size=11)),
+                    font=dict(size=13), bgcolor='rgba(255,255,255,0)'),
+        xaxis=dict(showgrid=False, showline=True, linecolor='#cbd5e1', linewidth=1,
+                   tickfont=dict(size=13), title_font=dict(size=14), zeroline=False),
+        yaxis=dict(showgrid=True, gridcolor='#eef2f7', gridwidth=1,
+                   showline=False, zeroline=False, tickfont=dict(size=13), title_font=dict(size=14)),
     )
     base.update(kw)
     return base
@@ -863,8 +862,8 @@ with st.sidebar:
     # Safety Factor (Z) — derived, read-only
     _z_val = _get_z(st.session_state.service_level_pct)
     st.markdown(
-        '<p style="font-size:10.5px;font-weight:600;text-transform:uppercase;'
-        'letter-spacing:0.5px;color:#475569;margin:8px 0 4px 0;">Safety Factor (Z)</p>'
+        '<p style="font-size:14px;font-weight:500;'
+        'letter-spacing:0;color:#cbd5e1;margin:10px 0 5px 0;">Safety Factor (Z)</p>'
         f'<div class="sb-z-box">{_z_val:.3f}</div>',
         unsafe_allow_html=True
     )
@@ -924,13 +923,13 @@ def _page_dashboard():
     hc1, hc2 = st.columns([5, 1])
     with hc1:
         st.markdown("""
-        <p style="font-size:22px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;margin:0 0 4px 0;">
+        <p style="font-size:30px;font-weight:700;color:#0f172a;letter-spacing:-0.5px;margin:0 0 4px 0;">
             AI-Based Demand Forecasting System</p>
-        <p style="font-size:12px;color:#64748b;margin:0;">
+        <p style="font-size:14px;color:#64748b;margin:0;">
             LSTM &amp; Hybrid ARIMA+XGBoost
-            <span style="color:#cbd5e1;margin:0 8px;">&#183;</span>
+            <span style="color:#64748b;margin:0 8px;">&#183;</span>
             Inventory Optimization
-            <span style="color:#cbd5e1;margin:0 8px;">&#183;</span>
+            <span style="color:#64748b;margin:0 8px;">&#183;</span>
             Safety Stock &amp; Reorder Point
         </p>""", unsafe_allow_html=True)
     with hc2:
@@ -942,8 +941,8 @@ def _page_dashboard():
         st.markdown("""
         <div style="text-align:center;padding:52px 24px;background:white;border:1.5px dashed #cbd5e1;
              border-radius:12px;margin-top:8px;">
-            <p style="font-size:16px;font-weight:600;color:#334155;margin:0 0 8px 0;">No Dataset Loaded</p>
-            <p style="font-size:13px;color:#64748b;margin:0 0 20px 0;max-width:360px;margin-left:auto;margin-right:auto;">
+            <p style="font-size:18px;font-weight:600;color:#334155;margin:0 0 8px 0;">No Dataset Loaded</p>
+            <p style="font-size:15px;color:#64748b;margin:0 0 20px 0;max-width:360px;margin-left:auto;margin-right:auto;">
                 Upload a CSV dataset to begin demand forecasting and inventory analysis.</p>
         </div>""", unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 1, 1])
@@ -966,20 +965,20 @@ def _page_dashboard():
     fc_horizon  = len(st.session_state.forecast_lstm) if has_fc else None
 
     # ── Icon KPI Card helper ──────────────────────────────────────────────────
-    def _ikpi(label, value, sub, icon, ibg, ifg, vclass=''):
-        vst = f'font-size:19px;font-weight:700;color:{ifg if vclass=="green" else "#0f172a"};letter-spacing:-0.5px;margin:0 0 3px 0;line-height:1.1;'
+    def _ikpi(label, value, sub, icon, ibg, ifg, vclass='', fs='28px'):
+        vst = (f'font-size:{fs};font-weight:800;color:{ifg if vclass=="green" else "#0f172a"};'
+               f'letter-spacing:-0.6px;margin:0 0 5px 0;line-height:1.15;overflow-wrap:anywhere;')
         return f"""
-        <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;
+        <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px 18px;
              box-shadow:0 1px 3px rgba(0,0,0,0.07);display:flex;align-items:flex-start;
-             justify-content:space-between;gap:10px;">
+             justify-content:space-between;gap:10px;min-height:118px;">
           <div style="flex:1;min-width:0;">
-            <p style="font-size:9.5px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;
-               color:#64748b;margin:0 0 6px 0;">{label}</p>
+            <p style="font-size:14px;font-weight:600;color:#475569;margin:0 0 8px 0;">{label}</p>
             <p style="{vst}">{value}</p>
-            <p style="font-size:10.5px;color:#94a3b8;margin:0;">{sub}</p>
+            <p style="font-size:14px;color:#64748b;margin:0;">{sub}</p>
           </div>
-          <div style="width:36px;height:36px;flex-shrink:0;border-radius:8px;background:{ibg};
-               color:{ifg};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;">
+          <div style="width:38px;height:38px;flex-shrink:0;border-radius:8px;background:{ibg};
+               color:{ifg};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;">
                {icon}</div>
         </div>"""
 
@@ -995,13 +994,29 @@ def _page_dashboard():
         if cdf is not None and len(cdf) > 0:
             r = cdf[cdf['Model'] == best_model]
             if len(r): mstr = f"RMSE {r.iloc[0]['RMSE']:.3f}"
-        k5.markdown(_ikpi('Best Model', best_model, mstr or 'Lowest RMSE', '&#9733;', '#d1fae5', '#059669', 'green'), unsafe_allow_html=True)
+        k5.markdown(_ikpi('Best Model', best_model, mstr or 'Lowest RMSE', '&#9733;', '#d1fae5', '#059669', 'green', fs='22px'), unsafe_allow_html=True)
     else:
         k5.markdown(_ikpi('Best Model', 'Not Trained', 'Train models first', '&#9733;', '#f1f5f9', '#94a3b8'), unsafe_allow_html=True)
     if has_fc:
         k6.markdown(_ikpi('Forecast Horizon', f'{fc_horizon} days', f'From {d_max}', '&#8599;', '#ede9fe', '#7c3aed'), unsafe_allow_html=True)
     else:
         k6.markdown(_ikpi('Forecast Horizon', 'Pending', 'Generate forecast', '&#8599;', '#f1f5f9', '#94a3b8'), unsafe_allow_html=True)
+
+    # ── Row 1b: Products & Stores (only when the dataset supports them) ────────
+    sku_c_k = st.session_state.selected_sku_col
+    store_c_k = st.session_state.selected_store_col
+    n_sku   = int(df[sku_c_k].nunique()) if sku_c_k and sku_c_k in df.columns else None
+    n_store = int(df[store_c_k].nunique()) if store_c_k and store_c_k in df.columns else None
+    if n_sku is not None or n_store is not None:
+        k_extras = []
+        if n_store is not None:
+            k_extras.append(_ikpi('Stores', _fmt(n_store, 0), 'Distinct store IDs', 'S', '#e0e7ff', '#4f46e5'))
+        if n_sku is not None:
+            k_extras.append(_ikpi('Products', _fmt(n_sku, 0), 'Distinct SKUs / items', 'P', '#ede9fe', '#7c3aed'))
+        kx = st.columns(len(k_extras))
+        for _col, _html in zip(kx, k_extras):
+            _col.markdown(_html, unsafe_allow_html=True)
+        st.markdown('<br>', unsafe_allow_html=True)
 
     st.markdown('<br>', unsafe_allow_html=True)
 
@@ -1028,10 +1043,10 @@ def _page_dashboard():
         src_mode     = st.session_state.get('_src_mode', 'Upload Files')
         dataset_type = 'Multi-File Dataset' if src_mode == 'Local Folder Path' else 'Single File Dataset'
         tag_c        = '#dbeafe;color:#1e40af' if 'Multi' in dataset_type else '#d1fae5;color:#059669'
-        miss_tag     = (f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;'
+        miss_tag     = (f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:14px;'
                         f'font-weight:600;background:#fef3c7;color:#b45309;">{missing_pct:.2f}%</span>'
                         if missing_pct > 0 else
-                        '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;'
+                        '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:14px;'
                         'font-weight:600;background:#d1fae5;color:#059669;">0%</span>')
 
         deg        = round(quality_score * 3.6)
@@ -1041,26 +1056,26 @@ def _page_dashboard():
             f'display:flex;align-items:center;justify-content:center;position:relative;">'
             f'<div style="width:40px;height:40px;background:white;border-radius:50%;'
             f'display:flex;align-items:center;justify-content:center;'
-            f'font-size:12px;font-weight:700;color:#059669;position:absolute;">{quality_score}%</div></div>'
+            f'font-size:14px;font-weight:700;color:#059669;position:absolute;">{quality_score}%</div></div>'
         )
 
         def _dov_row(label, val_html):
             return (f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;'
                     f'align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;">'
-                    f'<span style="font-size:12px;color:#64748b;">{label}</span>'
+                    f'<span style="font-size:14px;color:#64748b;">{label}</span>'
                     f'<span>{val_html}</span></div>')
 
-        tag_html = f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:{tag_c};">{dataset_type}</span>'
-        gran_html= '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#d1fae5;color:#059669;">Daily</span>'
+        tag_html = f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:14px;font-weight:600;background:{tag_c};">{dataset_type}</span>'
+        gran_html= '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:14px;font-weight:600;background:#d1fae5;color:#059669;">Daily</span>'
 
         st.markdown(f"""
         <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px 18px;height:100%;">
-            <p style="font-size:13.5px;font-weight:700;color:#0f172a;margin:0 0 14px 0;">Dataset Overview</p>
+            <p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 14px 0;">Dataset Overview</p>
             {_dov_row('Dataset Type', tag_html)}
             {_dov_row('Granularity', gran_html)}
             {_dov_row('Total Missing Values', miss_tag)}
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:center;padding:8px 0;">
-                <span style="font-size:12px;color:#64748b;">Data Quality Score</span>
+                <span style="font-size:14px;color:#64748b;">Data Quality Score</span>
                 <div style="display:flex;align-items:center;gap:8px;">{ring_html}</div>
             </div>
         </div>""", unsafe_allow_html=True)
@@ -1071,10 +1086,10 @@ def _page_dashboard():
             return (f'<div style="display:flex;align-items:flex-start;gap:9px;padding:10px;'
                     f'background:#f8fafc;border:1px solid #f1f5f9;border-radius:7px;">'
                     f'<div style="width:28px;height:28px;border-radius:6px;flex-shrink:0;background:{ibg};'
-                    f'color:{ifg};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;">'
+                    f'color:{ifg};display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;">'
                     f'{icon}</div>'
-                    f'<div><p style="font-size:11.5px;font-weight:600;color:#334155;margin:0 0 1px 0;">{name}</p>'
-                    f'<p style="font-size:10.5px;color:{sc2};margin:0;">{status}</p></div></div>')
+                    f'<div><p style="font-size:14px;font-weight:600;color:#334155;margin:0 0 1px 0;">{name}</p>'
+                    f'<p style="font-size:14px;color:{sc2};margin:0;">{status}</p></div></div>')
 
         items = [
             _dq('&#9781;', '#dbeafe', '#1e40af', 'Date Range Check',
@@ -1093,7 +1108,7 @@ def _page_dashboard():
         grid = ''.join(items)
         st.markdown(f"""
         <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px 18px;height:100%;">
-            <p style="font-size:13.5px;font-weight:700;color:#0f172a;margin:0 0 14px 0;">Data Quality Checks</p>
+            <p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 14px 0;">Data Quality Checks</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">{grid}</div>
         </div>""", unsafe_allow_html=True)
 
@@ -1104,7 +1119,7 @@ def _page_dashboard():
 
     with ch1:
         st.markdown('<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">'
-                    '<p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 6px 0;">Demand Trend</p>',
+                    '<p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 6px 0;">Demand Trend</p>',
                     unsafe_allow_html=True)
         t_d, t_w, t_m = st.tabs(['Daily', 'Weekly', 'Monthly'])
 
@@ -1131,7 +1146,7 @@ def _page_dashboard():
 
     with ch2:
         st.markdown('<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">'
-                    '<p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Seasonality (Avg Demand)</p>',
+                    '<p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Seasonality (Avg Demand)</p>',
                     unsafe_allow_html=True)
         try:
             df_s = df.copy()
@@ -1150,7 +1165,7 @@ def _page_dashboard():
 
     with ch3:
         st.markdown('<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">'
-                    '<p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Demand Distribution</p>',
+                    '<p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Demand Distribution</p>',
                     unsafe_allow_html=True)
         try:
             fig_d = go.Figure(go.Histogram(x=df[sc].dropna(), nbinsx=30,
@@ -1165,6 +1180,47 @@ def _page_dashboard():
 
     st.markdown('<br>', unsafe_allow_html=True)
 
+    # ── Row 3b: Top Products | Top Stores ─────────────────────────────────────
+    _rank_items = []
+    if sku_c_k and sku_c_k in df.columns:
+        _t = (df.groupby(sku_c_k)[sc].sum().reset_index()
+                 .sort_values(sc, ascending=False).head(5).copy())
+        _t['pct'] = _t[sc] / _t[sc].sum() * 100
+        _rank_items.append(('Top Products', sku_c_k, _t))
+    if store_c_k and store_c_k in df.columns:
+        _t = (df.groupby(store_c_k)[sc].sum().reset_index()
+                 .sort_values(sc, ascending=False).head(5).copy())
+        _t['pct'] = _t[sc] / _t[sc].sum() * 100
+        _rank_items.append(('Top Stores', store_c_k, _t))
+
+    if _rank_items:
+        _rp = st.columns(len(_rank_items))
+        for _rcol, (_ttl, _name, _tbl) in zip(_rp, _rank_items):
+            _maxv = float(_tbl[sc].max()) if len(_tbl) else 1.0
+            _rows = ''.join(
+                f'<div style="display:grid;grid-template-columns:1.6fr 1fr 0.8fr;gap:8px;'
+                f'align-items:center;padding:7px 0;border-bottom:1px solid #f8fafc;font-size:14px;">'
+                f'<span style="color:#334155;font-weight:500;font-size:14px;overflow:hidden;'
+                f'text-overflow:ellipsis;white-space:nowrap;">{row[_name]}</span>'
+                f'<span style="color:#0f172a;font-weight:600;">{_fmt(row[sc])}</span>'
+                f'<div style="display:flex;align-items:center;gap:5px;">'
+                f'<span style="height:4px;border-radius:2px;display:inline-block;'
+                f'width:{int(row[sc]/_maxv*60)}px;background:#059669;"></span>'
+                f'<span style="font-size:14px;color:#64748b;">{row["pct"]:.1f}%</span></div></div>'
+                for _, row in _tbl.iterrows()
+            )
+            _rcol.markdown(f"""
+            <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:16px 16px;height:100%;">
+                <p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">{_ttl}</p>
+                <div style="display:grid;grid-template-columns:1.6fr 1fr 0.8fr;gap:8px;padding:5px 0 7px 0;border-bottom:1px solid #e2e8f0;">
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">{_name}</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">Total</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">% Share</span>
+                </div>
+                {_rows}
+            </div>""", unsafe_allow_html=True)
+        st.markdown('<br>', unsafe_allow_html=True)
+
     # ── Row 4: Top Demand Periods | Model Performance | Quick Actions ─────────
     b1, b2, b3 = st.columns([1.5, 1.5, 1])
 
@@ -1177,35 +1233,35 @@ def _page_dashboard():
 
             rows_html = ''.join(
                 f'<div style="display:grid;grid-template-columns:1.6fr 1fr 0.8fr;gap:8px;'
-                f'align-items:center;padding:7px 0;border-bottom:1px solid #f8fafc;font-size:12px;">'
-                f'<span style="color:#334155;font-weight:500;font-family:monospace;font-size:11px;">'
+                f'align-items:center;padding:7px 0;border-bottom:1px solid #f8fafc;font-size:14px;">'
+                f'<span style="color:#334155;font-weight:500;font-family:monospace;font-size:14px;">'
                 f'{row[dc].strftime("%Y-%m-%d") if hasattr(row[dc], "strftime") else str(row[dc])}</span>'
                 f'<span style="color:#0f172a;font-weight:600;">{_fmt(row[sc])}</span>'
                 f'<div style="display:flex;align-items:center;gap:5px;">'
                 f'<span style="height:4px;border-radius:2px;display:inline-block;width:{int(row[sc]/max_val*60)}px;background:#1e40af;"></span>'
-                f'<span style="font-size:10.5px;color:#64748b;">{row["pct"]:.1f}%</span></div></div>'
+                f'<span style="font-size:14px;color:#64748b;">{row["pct"]:.1f}%</span></div></div>'
                 for _, row in top5.iterrows()
             )
             st.markdown(f"""
             <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">
-                <p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Top Demand Periods</p>
+                <p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Top Demand Periods</p>
                 <div style="display:grid;grid-template-columns:1.6fr 1fr 0.8fr;gap:8px;padding:5px 0 7px 0;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">Date</span>
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">Total Demand</span>
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">% Share</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">Date</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">Total Demand</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">% Share</span>
                 </div>
                 {rows_html}
             </div>""", unsafe_allow_html=True)
         except Exception:
-            st.markdown('<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;"><p style="font-size:13px;font-weight:700;color:#0f172a;">Top Demand Periods</p><p style="font-size:12px;color:#94a3b8;padding:12px 0;">No data available</p></div>', unsafe_allow_html=True)
+            st.markdown('<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;"><p style="font-size:17px;font-weight:700;color:#0f172a;">Top Demand Periods</p><p style="font-size:14px;color:#64748b;padding:12px 0;">No data available</p></div>', unsafe_allow_html=True)
 
     with b2:
         if st.session_state.models_trained and st.session_state.comparison_df is not None:
             comp = st.session_state.comparison_df
             rows_html = ''.join(
                 f'<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:8px;'
-                f'align-items:center;padding:7px 0;border-bottom:1px solid #f8fafc;font-size:12px;">'
-                f'<span style="color:#334155;font-weight:700;font-size:11px;">{row["Model"]}</span>'
+                f'align-items:center;padding:7px 0;border-bottom:1px solid #f8fafc;font-size:14px;">'
+                f'<span style="color:#334155;font-weight:700;font-size:14px;">{row["Model"]}</span>'
                 f'<span style="color:#64748b;">{row["MAE"]:.3f}</span>'
                 f'<span style="color:#64748b;">{row["RMSE"]:.3f}</span>'
                 f'<span style="color:#64748b;">{row["MAPE (%)"]:.2f}%</span></div>'
@@ -1213,12 +1269,12 @@ def _page_dashboard():
             )
             st.markdown(f"""
             <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">
-                <p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Model Performance</p>
+                <p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Model Performance</p>
                 <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:8px;padding:5px 0 7px 0;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">Model</span>
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">MAE</span>
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">RMSE</span>
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">MAPE</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">Model</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">MAE</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">RMSE</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">MAPE</span>
                 </div>
                 {rows_html}
             </div>""", unsafe_allow_html=True)
@@ -1230,15 +1286,15 @@ def _page_dashboard():
                 for nm, v in [('Mean', avg_d), ('Std Dev', std_d), ('Median', float(p50)),
                               ('25th Pct', float(p25)), ('75th Pct', float(p75)), ('Max', float(df[sc].max()))]:
                     stats_rows += (f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;'
-                                   f'padding:7px 0;border-bottom:1px solid #f8fafc;font-size:12px;">'
+                                   f'padding:7px 0;border-bottom:1px solid #f8fafc;font-size:14px;">'
                                    f'<span style="color:#64748b;">{nm}</span>'
                                    f'<span style="color:#0f172a;font-weight:600;">{_fmt(v)}</span></div>')
             st.markdown(f"""
             <div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">
-                <p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Demand Statistics</p>
+                <p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 10px 0;">Demand Statistics</p>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:5px 0 7px 0;border-bottom:1px solid #e2e8f0;">
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">Metric</span>
-                    <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;">Value</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">Metric</span>
+                    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#64748b;">Value</span>
                 </div>
                 {stats_rows}
             </div>""", unsafe_allow_html=True)
@@ -1256,13 +1312,13 @@ def _page_dashboard():
             f'<div style="background:#f8fafc;border:1px solid #f1f5f9;border-radius:8px;'
             f'padding:12px 8px 10px 8px;text-align:center;">'
             f'<div style="width:32px;height:32px;border-radius:8px;margin:0 auto 8px auto;'
-            f'background:{bg};color:{fg};display:flex;align-items:center;justify-content:center;font-size:15px;">{icon}</div>'
-            f'<p style="font-size:11px;font-weight:700;color:#334155;margin:0 0 2px 0;">{name}</p>'
-            f'<p style="font-size:9.5px;color:#94a3b8;margin:0;">{sub}</p></div>'
+            f'background:{bg};color:{fg};display:flex;align-items:center;justify-content:center;font-size:17px;">{icon}</div>'
+            f'<p style="font-size:14px;font-weight:700;color:#334155;margin:0 0 2px 0;">{name}</p>'
+            f'<p style="font-size:14px;color:#64748b;margin:0;">{sub}</p></div>'
             for name, _, icon, bg, fg, sub in actions
         )
         st.markdown(f'<div style="background:white;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;">'
-                    f'<p style="font-size:13px;font-weight:700;color:#0f172a;margin:0 0 12px 0;">Quick Actions</p>'
+                    f'<p style="font-size:17px;font-weight:700;color:#0f172a;margin:0 0 12px 0;">Quick Actions</p>'
                     f'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">{cards}</div></div>',
                     unsafe_allow_html=True)
         # Actual clickable buttons
@@ -1287,14 +1343,14 @@ def _page_data():
     
     step_html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">'
     for i, (num, label, done) in enumerate(steps):
-        color = '#059669' if done else '#94a3b8'
+        color = '#059669' if done else '#64748b'
         bg = '#d1fae5' if done else '#f1f5f9'
         step_html += (
             '<div style="flex:1;text-align:center;">'
             f'<div style="width:28px;height:28px;border-radius:50%;background:{bg};color:{color};'
             'display:flex;align-items:center;justify-content:center;margin:0 auto 6px;'
-            'font-weight:700;font-size:12px;">{num}</div>'
-            f'<div style="font-size:11px;color:{color};font-weight:600;">{label}</div>'
+            'font-weight:700;font-size:14px;">{num}</div>'
+            f'<div style="font-size:14px;color:{color};font-weight:600;">{label}</div>'
             '</div>'
         )
         if i < len(steps) - 1:
@@ -1491,7 +1547,8 @@ def _page_data():
                     st.session_state.selected_date_col,
                     st.session_state.selected_sales_col,
                     st.session_state.selected_store_col,
-                    st.session_state.selected_sku_col
+                    st.session_state.selected_sku_col,
+                    seq_length=st.session_state.seq_length
                 )
                 if not is_valid:
                     prog.empty()
@@ -1847,7 +1904,18 @@ Step 4 - Forecast = ARIMA + XGBoost correction
             )
 
             status_box.info('Training models on panel data (per store/SKU)...')
-            prog.progress(15)
+            prog.progress(15, text='Training LSTM and hybrid models on panel data...')
+
+            def _panel_progress(fraction, message):
+                # Map the service's 0..1 progress into the 15..68% band so the
+                # later evaluation steps (70/85/100) still advance forward.
+                try:
+                    pct = int(15 + 53 * max(0.0, min(1.0, fraction)))
+                    prog.progress(pct, text=message)
+                    status_box.info(message)
+                except Exception:
+                    # Never let a UI/socket error abort a long training run.
+                    pass
 
             results = service.train_all_models_panel(
                 train_df=df,
@@ -1857,10 +1925,11 @@ Step 4 - Forecast = ARIMA + XGBoost correction
                 sku_col=sku_c,
                 date_col=dc,
                 preprocessor=preprocessor,
+                progress_callback=_panel_progress,
             )
 
             status_box.info('Evaluating models on validation set...')
-            prog.progress(70)
+            prog.progress(70, text='Evaluating models on validation set...')
 
             # Get test predictions from service
             test_preds = service.get_test_predictions()
@@ -1900,13 +1969,22 @@ Step 4 - Forecast = ARIMA + XGBoost correction
             lstm_test_start_idx = preprocessor.train_size
 
             status_box.info('Training LSTM model...')
-            prog.progress(15)
+            prog.progress(15, text='Training LSTM model...')
             lstm = LSTMForecaster(seq_length=seq_length, epochs=lstm_epochs, batch_size=lstm_batch)
             lstm.build_model((X_tr.shape[1], X_tr.shape[2]))
-            lstm.train(X_tr, y_tr, X_te, y_te, verbose=0)
+
+            def _lstm_progress(epoch, total_epochs):
+                try:
+                    pct = int(15 + 30 * (epoch / max(total_epochs, 1)))
+                    prog.progress(pct, text=f'Training LSTM epoch {epoch}/{total_epochs}...')
+                    status_box.info(f'Training LSTM epoch {epoch}/{total_epochs}...')
+                except Exception:
+                    pass
+
+            lstm.train(X_tr, y_tr, X_te, y_te, verbose=0, progress_callback=_lstm_progress)
 
             status_box.info('Evaluating LSTM...')
-            prog.progress(45)
+            prog.progress(45, text='Evaluating LSTM...')
             lstm_preds_scaled = lstm.predict(X_te)
             lstm_preds = lstm_scaler.inverse_transform(lstm_preds_scaled).flatten()
             y_test_actual = lstm_scaler.inverse_transform(y_te.reshape(-1, 1)).flatten()
@@ -2038,7 +2116,7 @@ def _page_comparison():
                 marker_color=colors[i % 2],
                 text=[f'{row["MAE"]:.3f}', f'{row["RMSE"]:.3f}', f'{row["MAPE (%)"]:.2f}%'],
                 textposition='outside',
-                textfont=dict(size=10),
+                textfont=dict(size=12),
             ))
         fig_bar.update_layout(**_cl(
             title='Model Error Metrics', height=300,
@@ -2157,14 +2235,26 @@ def _page_forecast():
                     service.hybrid_model = st.session_state.predictions.get('hybrid_obj')
                     service.preprocessor = st.session_state.preprocessor
                     service._panel_scalers = st.session_state.preprocessor._panel_scalers
+                    # Restore the validation predictions so best-model selection
+                    # matches what the dashboard shows.
+                    service._test_predictions = {
+                        'LSTM': st.session_state.predictions.get('lstm'),
+                        'Hybrid ARIMA+XGBoost': st.session_state.predictions.get('hybrid'),
+                        'y_test': st.session_state.predictions.get('y_test'),
+                    }
                     service._is_trained = True
 
                 status.info('Generating predictions for test.csv...')
                 prog.progress(20)
 
-                # Generate test predictions
+                # Generate test predictions.
+                # Use the CLEANED training data the models were actually trained on
+                # (st.session_state.data == preprocessor.clean_data(train_df)), not
+                # the raw uploaded CSV: the raw frame can carry NaN/non-numeric sales
+                # and a different row count, which mis-scales the context and shifts
+                # the hybrid forecast horizon.
                 submission_df = service.generate_test_predictions(
-                    train_df=st.session_state.train_df,
+                    train_df=df,
                     test_df=test_df,
                     sales_col=sc,
                     store_col=store_c,
@@ -2379,7 +2469,7 @@ def _page_forecast():
         last_d = df[dc].max()
         fig.add_vline(x=last_d, line_dash='dot', line_color='#94a3b8', line_width=1)
         fig.add_annotation(x=last_d, y=1, yref='paper', text='Forecast start',
-                           showarrow=False, font=dict(size=10, color='#94a3b8'),
+                           showarrow=False, font=dict(size=12, color='#64748b'),
                            xanchor='left', xshift=4)
 
         fig.update_layout(**_cl(title='Demand Forecast', height=370,
@@ -2545,13 +2635,13 @@ def _page_inventory():
         fig_inv.add_hline(y=rop, line_dash='dash', line_color='#dc2626', line_width=1.5,
                           annotation_text=f'Reorder Point ({rop:,.0f})',
                           annotation_position='top right',
-                          annotation_font_size=10)
+                          annotation_font_size=12)
 
         # Safety stock line
         fig_inv.add_hline(y=safety_stock, line_dash='dot', line_color='#d97706', line_width=1,
                           annotation_text=f'Safety Stock ({safety_stock:,.0f})',
                           annotation_position='bottom right',
-                          annotation_font_size=10)
+                          annotation_font_size=12)
 
         # Order events
         order_days = inv_proj[inv_proj['Order_Placed']]['Period'].tolist()
@@ -2654,9 +2744,9 @@ def _page_reports():
                 f'<div style="border:1px solid {border_color};border-radius:8px;'
                 f'padding:14px 18px;background:white;margin-bottom:10px;">'
                 f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
-                f'<span style="font-size:13.5px;font-weight:600;color:{text_color};">{rpt["title"]}</span>'
+                f'<span style="font-size:15px;font-weight:600;color:{text_color};">{rpt["title"]}</span>'
                 f'{badge_html}</div>'
-                f'<span style="font-size:12px;color:var(--text-muted);">{rpt["desc"]}</span>'
+                f'<span style="font-size:14px;color:var(--text-muted);">{rpt["desc"]}</span>'
                 f'</div>',
                 unsafe_allow_html=True
             )

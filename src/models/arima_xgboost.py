@@ -1,7 +1,13 @@
+import logging
+import time
+import warnings
+
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor
+
+logger = logging.getLogger(__name__)
 
 _FALLBACK_ARIMA_ORDERS = [(1, 1, 1), (0, 1, 1), (1, 1, 0), (0, 1, 0), (1, 0, 0)]
 
@@ -40,23 +46,82 @@ class HybridArimaXGBoost:
         # Panel data support
         self._panel_models = {}       # (store_id, sku_id) -> dict with arima_model, xgb_model, etc.
         self._is_panel = False
+        self._seen_warnings = set()   # dedupe repeated statsmodels warnings across fits
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _validate_series(data):
+        """Validate a 1-D demand series before handing it to statsmodels.
+
+        Raises a clear, actionable error for empty / non-finite input instead of
+        letting statsmodels or XGBoost fail deep inside with an opaque message.
+        """
+        arr = np.asarray(data, dtype=float).ravel()
+        if arr.size < 3:
+            raise ValueError(
+                f"ARIMA requires at least 3 observations to fit, got {arr.size}."
+            )
+        if not np.all(np.isfinite(arr)):
+            n_bad = int((~np.isfinite(arr)).sum())
+            raise ValueError(
+                f"ARIMA input contains {n_bad} non-finite value(s) (NaN/inf). "
+                "Clean or impute the series before fitting."
+            )
+        return arr
+
+    def _handle_fit_warnings(self, order, caught):
+        """Log statsmodels fit warnings without treating them as fatal.
+
+        Non-invertible / non-stationary starting-parameter notices are normal and
+        are handled internally by statsmodels (it substitutes zeros). They are
+        surfaced once per unique message, then demoted to debug to avoid flooding
+        the logs when fitting many panel series.
+        """
+        for w in caught:
+            msg = f"{w.category.__name__}: {w.message}"
+            if msg in self._seen_warnings:
+                logger.debug("ARIMA%s fit warning (repeat): %s", order, msg)
+            else:
+                self._seen_warnings.add(msg)
+                logger.warning("ARIMA%s fit warning: %s", order, msg)
+
     def _fit_arima_with_fallback(self, data, order):
-        """Try to fit ARIMA with given order; fall back through safe alternatives."""
+        """Try to fit ARIMA with given order; fall back through safe alternatives.
+
+        Failures (exceptions) trigger the next candidate order. Warnings that
+        statsmodels can recover from do not. Each attempt is timed and logged so
+        a stuck fit is visible in the terminal.
+        """
+        data = self._validate_series(data)
         orders_to_try = [order] + [o for o in _FALLBACK_ARIMA_ORDERS if o != order]
         last_exc = None
-        for o in orders_to_try:
+        for attempt, o in enumerate(orders_to_try):
+            t0 = time.perf_counter()
             try:
-                m = ARIMA(data, order=o)
-                fitted = m.fit()
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    m = ARIMA(data, order=o)
+                    fitted = m.fit()
+                self._handle_fit_warnings(o, caught)
                 self.arima_order = o
+                elapsed = time.perf_counter() - t0
+                if attempt > 0:
+                    logger.warning(
+                        "ARIMA%s failed; fell back to ARIMA%s (%.2fs)",
+                        order, o, elapsed,
+                    )
+                else:
+                    logger.debug("ARIMA%s fitted in %.2fs", o, elapsed)
                 return fitted
             except Exception as exc:
                 last_exc = exc
+                logger.debug(
+                    "ARIMA%s fit attempt failed after %.2fs: %s",
+                    o, time.perf_counter() - t0, exc,
+                )
         raise RuntimeError(f"All ARIMA orders failed. Last error: {last_exc}")
 
     def _create_lag_features(self, series):
@@ -122,19 +187,30 @@ class HybridArimaXGBoost:
         self._train_data = train_data
 
         # Step 1 — Fit ARIMA
+        t_arima = time.perf_counter()
         self.arima_model = self._fit_arima_with_fallback(train_data, self.arima_order)
         self.arima_fitted = True
+        arima_secs = time.perf_counter() - t_arima
 
         # Step 2 — Residuals = actual − ARIMA in-sample fitted values
         _resid = self.arima_model.resid
         self._residuals = _resid.values if hasattr(_resid, 'values') else np.asarray(_resid)
 
         # Step 3 — Train XGBoost on lagged residuals
+        t_xgb = time.perf_counter()
         X_r, y_r = self._create_lag_features(self._residuals)
         if len(X_r) >= 5:
             X_r_scaled = self.residual_scaler.fit_transform(X_r)
             self.xgb_model.fit(X_r_scaled, y_r)
             self.xgb_trained = True
+        xgb_secs = time.perf_counter() - t_xgb
+
+        logger.info(
+            "Hybrid fit complete: ARIMA%s %.2fs | XGBoost%s %.2fs | n=%d",
+            self.arima_order, arima_secs,
+            " trained" if self.xgb_trained else " skipped (too few residuals)",
+            xgb_secs, len(train_data),
+        )
 
     # ------------------------------------------------------------------
     # Evaluation on held-out test set (no leakage)
@@ -228,7 +304,8 @@ class HybridArimaXGBoost:
     # Panel Data Support
     # ------------------------------------------------------------------
 
-    def fit_panel(self, panel_data, arima_order=None, verbose=False):
+    def fit_panel(self, panel_data, arima_order=None, verbose=False,
+                  progress_callback=None, log_every=50):
         """
         Fit Hybrid model for each (store_id, sku_id) group in panel data.
 
@@ -240,6 +317,9 @@ class HybridArimaXGBoost:
             }
             arima_order: Optional ARIMA order override
             verbose: Print progress
+            progress_callback: Optional callable(done, total, group_key) invoked
+                after each group so long-running fits can report progress.
+            log_every: Log a progress line every N groups.
 
         Returns:
             Dict of results per group
@@ -249,26 +329,31 @@ class HybridArimaXGBoost:
         results = {}
 
         order = arima_order or self.arima_order
+        total = len(panel_data)
+        fitted = skipped = failed = 0
+        started = time.perf_counter()
 
-        for (store_id, sku_id), data in panel_data.items():
-            if data.get('skipped', False):
-                results[(store_id, sku_id)] = {
-                    'skipped': True,
-                    'reason': data.get('reason', 'Unknown')
-                }
-                continue
-
-            train_series = data['train_series']
-            test_series = data.get('test_series')
-
-            if len(train_series) < 20:
-                results[(store_id, sku_id)] = {
-                    'skipped': True,
-                    'reason': f'Insufficient training data: {len(train_series)}'
-                }
-                continue
-
+        for index, ((store_id, sku_id), data) in enumerate(panel_data.items(), start=1):
             try:
+                if data.get('skipped', False):
+                    results[(store_id, sku_id)] = {
+                        'skipped': True,
+                        'reason': data.get('reason', 'Unknown')
+                    }
+                    skipped += 1
+                    continue
+
+                train_series = data['train_series']
+                test_series = data.get('test_series')
+
+                if len(train_series) < 20:
+                    results[(store_id, sku_id)] = {
+                        'skipped': True,
+                        'reason': f'Insufficient training data: {len(train_series)}'
+                    }
+                    skipped += 1
+                    continue
+
                 # Fit ARIMA with fallback
                 arima_model = self._fit_arima_with_fallback(train_series, order)
                 arima_fitted = True
@@ -321,6 +406,7 @@ class HybridArimaXGBoost:
                     'n_test': len(test_series) if test_series is not None else 0,
                     'test_predictions': test_preds
                 }
+                fitted += 1
 
                 if verbose:
                     print(f"  Fitted {store_id}-{sku_id}: ARIMA{self.arima_order}, XGB={xgb_trained}")
@@ -330,8 +416,27 @@ class HybridArimaXGBoost:
                     'skipped': True,
                     'reason': f'Fitting failed: {str(e)}'
                 }
+                failed += 1
                 if verbose:
                     print(f"  Failed {store_id}-{sku_id}: {e}")
+
+            if log_every and (index % log_every == 0 or index == total):
+                logger.info(
+                    "Panel hybrid progress: %d/%d groups (%.0f%%), fitted=%d skipped=%d failed=%d",
+                    index, total, 100.0 * index / max(total, 1), fitted, skipped, failed,
+                )
+
+            if progress_callback is not None:
+                try:
+                    progress_callback(index, total, (store_id, sku_id))
+                except Exception:
+                    logger.debug("fit_panel progress_callback failed", exc_info=True)
+
+        logger.info(
+            "Panel hybrid fit complete: %d/%d groups in %.1fs "
+            "(fitted=%d, skipped=%d, failed=%d)",
+            fitted, total, time.perf_counter() - started, fitted, skipped, failed,
+        )
 
         return results
 

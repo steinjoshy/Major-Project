@@ -53,9 +53,18 @@ class DataPreprocessor:
     # Validation
     # ------------------------------------------------------------------
 
-    def validate_data(self, df, date_col, sales_col, store_col=None, sku_col=None):
+    def validate_data(self, df, date_col, sales_col, store_col=None, sku_col=None, seq_length=30):
         """
         Validate the dataset before processing.
+
+        Args:
+            df: Input dataframe
+            date_col: Name of date column
+            sales_col: Name of sales/quantity column
+            store_col: Optional store identifier column
+            sku_col: Optional SKU identifier column
+            seq_length: LSTM look-back window (default 30), used for the
+                per-group minimum-row warning on panel data.
 
         Returns:
             (is_valid: bool, messages: list[str])

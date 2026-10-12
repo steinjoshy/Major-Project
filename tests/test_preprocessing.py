@@ -57,6 +57,28 @@ class TestDataLoading:
         assert is_valid is True
         assert any('zero variance' in m.lower() or 'constant' in m.lower() for m in messages)
 
+    def test_validate_data_panel_seq_length(self):
+        """Regression: validate_data with store/sku columns must not raise
+        NameError for seq_length (the per-group row check used to reference
+        an undefined variable)."""
+        preprocessor = DataPreprocessor()
+        df = pd.DataFrame({
+            'Date': pd.date_range('2023-01-01', periods=40),
+            'Store': ['S1'] * 40,
+            'SKU':   ['P1'] * 20 + ['P2'] * 20,
+            'Sales': list(range(40)),
+        })
+        # Two groups of 20 rows each -> min group size (20) < seq_length + 10 (40)
+        is_valid, messages = preprocessor.validate_data(df, 'Date', 'Sales', 'Store', 'SKU')
+        assert is_valid is True
+        assert any('fewer than' in m for m in messages)
+
+        # Explicit seq_length is honored in the threshold (20 < 35 still warns)
+        _, messages_small = preprocessor.validate_data(
+            df, 'Date', 'Sales', 'Store', 'SKU', seq_length=25
+        )
+        assert any('fewer than' in m for m in messages_small)
+
 
 class TestDataCleaning:
     """Test data cleaning operations."""
